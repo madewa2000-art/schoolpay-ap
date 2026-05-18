@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — SchoolPay Admin</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Reports</h1>
+        <div class="sp-topbar-right"><span style="font-size:13px;color:var(--muted)" id="sp-topbar-school"></span></div>
+      </header>
+
+      <div class="sp-admin-content">
+        <!-- Summary stats -->
+        <div class="sp-stats-grid" id="stats-grid" style="margin-bottom:28px">
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-total">—</div><div class="sp-stat-label">Total Collected</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-month">—</div><div class="sp-stat-label">This Month</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-confirmed">—</div><div class="sp-stat-label">Confirmed Payments</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-pending">—</div><div class="sp-stat-label">Pending</div></div>
+        </div>
+
+        <!-- CSV Export -->
+        <div class="sp-card">
+          <div class="sp-card-header"><span class="sp-card-title">Export Confirmed Payments to CSV</span></div>
+          <div class="sp-card-body">
+            <div class="sp-form-row" style="max-width:480px">
+              <div class="sp-form-group">
+                <label class="sp-label">From Date</label>
+                <input class="sp-input" type="date" id="export-from" />
+              </div>
+              <div class="sp-form-group">
+                <label class="sp-label">To Date</label>
+                <input class="sp-input" type="date" id="export-to" />
+              </div>
+            </div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Leave dates blank to export all confirmed payments.</p>
+            <button class="btn btn-primary" id="export-btn" onclick="doExport()">Download CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireAuth(['school_admin','bursar','accountant'])
+    if (user) { initAdminPage({ activePage: 'reports', titleText: 'Reports' }); init() }
+
+    async function init() {
+      const school = getSchool()
+      try {
+        const stats = await apiFetch(`/s/${school.slug}/admin/stats`)
+        document.getElementById('stat-total').textContent     = formatNaira(stats.total_collected)
+        document.getElementById('stat-month').textContent     = formatNaira(stats.collected_this_month)
+        document.getElementById('stat-confirmed').textContent = stats.confirmed
+        document.getElementById('stat-pending').textContent   = stats.pending
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    async function doExport() {
+      const school = getSchool()
+      const from   = document.getElementById('export-from').value
+      const to     = document.getElementById('export-to').value
+      const btn    = document.getElementById('export-btn')
+      btnLoading(btn, true)
+      try {
+        const params = new URLSearchParams()
+        if (from) params.set('from', from)
+        if (to)   params.set('to', to)
+        await apiDownload(`/s/${school.slug}/admin/payments/export?${params}`, `payments-${school.slug}-${Date.now()}.csv`)
+        toast('CSV downloaded!', 'success')
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+      btnLoading(btn, false, 'Download CSV')
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Complaints — SchoolPay Admin</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Complaints</h1>
+        <div class="sp-topbar-right">
+          <span style="font-size:13px;color:var(--muted)" id="sp-topbar-school"></span>
+          <select class="sp-select" id="status-filter" style="padding:8px 12px;font-size:13px" onchange="init()">
+            <option value="">All</option>
+            <option value="open">Open</option>
+            <option value="in_review">In Review</option>
+            <option value="resolved">Resolved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+      </header>
+
+      <div class="sp-admin-content">
+        <div class="sp-card">
+          <div class="sp-table-wrap">
+            <table class="sp-table">
+              <thead><tr><th>Student</th><th>ID</th><th>Subject</th><th>Reference</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+              <tbody id="complaints-tbody">
+                <tr class="sp-loading-row"><td colspan="7"><span class="sp-spinner dark"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Complaint thread modal -->
+  <div class="sp-modal-overlay hidden" id="thread-modal">
+    <div class="sp-modal" style="max-width:600px">
+      <div class="sp-modal-header">
+        <div>
+          <div class="sp-modal-title" id="thread-subject"></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px" id="thread-meta"></div>
+        </div>
+        <button class="sp-modal-close" onclick="closeThread()">x</button>
+      </div>
+      <div class="sp-modal-body">
+        <div class="sp-form-group" style="margin-bottom:12px">
+          <label class="sp-label">Update Status</label>
+          <select class="sp-select" id="thread-status" onchange="updateStatus()" style="max-width:200px">
+            <option value="open">Open</option>
+            <option value="in_review">In Review</option>
+            <option value="resolved">Resolved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--rule);border-radius:var(--radius);padding:12px;margin-bottom:16px">
+          <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Original Message</p>
+          <p style="font-size:13px;margin-top:6px" id="thread-body"></p>
+        </div>
+
+        <div class="sp-thread" id="thread-replies" style="margin-bottom:16px;max-height:240px;overflow-y:auto"></div>
+
+        <div class="sp-form-group">
+          <label class="sp-label">Reply to Student</label>
+          <textarea class="sp-textarea" id="reply-text" placeholder="Type your reply..." style="min-height:80px"></textarea>
+        </div>
+        <div id="reply-error" style="color:var(--danger);font-size:13px;display:none"></div>
+      </div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeThread()">Close</button>
+        <button class="btn btn-primary" id="reply-btn" onclick="sendReply()">Send Reply</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireAuth(['school_admin','bursar','accountant'])
+    if (user) { initAdminPage({ activePage: 'complaints', titleText: 'Complaints' }); init() }
+
+    let currentComplaint = null
+
+    async function init() {
+      const school = getSchool()
+      const status = document.getElementById('status-filter').value
+      const tbody  = document.getElementById('complaints-tbody')
+      tbody.innerHTML = `<tr class="sp-loading-row"><td colspan="7"><span class="sp-spinner dark"></span></td></tr>`
+      try {
+        const url = `/s/${school.slug}/admin/complaints${status ? `?status=${status}` : ''}`
+        const data = await apiFetch(url)
+        if (!data.length) {
+          tbody.innerHTML = `<tr><td colspan="7"><div class="sp-empty"><p>No complaints</p></div></td></tr>`
+          return
+        }
+        tbody.innerHTML = data.map(c => `
+          <tr>
+            <td data-label="Student">${esc(c.student_name)}</td>
+            <td data-label="ID"><code>${esc(c.student_id)}</code></td>
+            <td data-label="Subject"><strong>${esc(c.subject)}</strong></td>
+            <td data-label="Reference">${c.reference ? `<code style="font-size:11px;word-break:break-all">${esc(c.reference)}</code>` : '—'}</td>
+            <td data-label="Status">${badgeHTML(c.status)}</td>
+            <td data-label="Date">${formatDate(c.created_at)}</td>
+            <td data-label=""><button class="btn btn-primary btn-sm" onclick='openThread(${JSON.stringify(c)})'>View Thread</button></td>
+          </tr>`).join('')
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    function openThread(complaint) {
+      currentComplaint = complaint
+      document.getElementById('thread-subject').textContent = complaint.subject
+      document.getElementById('thread-meta').textContent = `${complaint.student_name} (${complaint.student_id}) Â· ${complaint.student_email} Â· ${formatDate(complaint.created_at)}`
+      document.getElementById('thread-body').textContent = complaint.body
+      document.getElementById('thread-status').value = complaint.status
+      document.getElementById('reply-text').value = ''
+      document.getElementById('reply-error').style.display = 'none'
+      const repliesEl = document.getElementById('thread-replies')
+      const replies   = complaint.replies || []
+      repliesEl.innerHTML = replies.map(r => `
+        <div class="sp-thread-msg ${r.is_admin ? 'admin' : 'student'}">
+          <p style="font-size:13px">${esc(r.message)}</p>
+          <div class="sp-thread-meta">${esc(r.responder_name)} · ${formatDateTime(r.created_at)}</div>
+        </div>`).join('') || '<p style="font-size:13px;color:var(--muted)">No replies yet.</p>'
+      document.getElementById('thread-modal').classList.remove('hidden')
+    }
+    function closeThread() { document.getElementById('thread-modal').classList.add('hidden'); init() }
+
+    async function updateStatus() {
+      const school = getSchool()
+      const status = document.getElementById('thread-status').value
+      try {
+        await apiFetch(`/s/${school.slug}/admin/complaints/${currentComplaint.id}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status }),
+        })
+        toast('Status updated', 'success')
+        currentComplaint.status = status
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    async function sendReply() {
+      const school  = getSchool()
+      const message = document.getElementById('reply-text').value.trim()
+      const errEl   = document.getElementById('reply-error')
+      const btn     = document.getElementById('reply-btn')
+      if (!message) { errEl.textContent = 'Reply cannot be empty'; errEl.style.display = 'block'; return }
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+      try {
+        await apiFetch(`/s/${school.slug}/admin/complaints/${currentComplaint.id}/reply`, {
+          method: 'POST',
+          body: JSON.stringify({ message }),
+        })
+        toast('Reply sent!', 'success')
+        document.getElementById('reply-text').value = ''
+        btnLoading(btn, false, 'Send Reply')
+        // Reload the complaint to show new reply
+        const updated = await apiFetch(`/s/${school.slug}/admin/complaints?limit=1`)
+        // Just close and re-open won't refresh, so append locally
+        const repliesEl = document.getElementById('thread-replies')
+        const newMsg = document.createElement('div')
+        newMsg.className = 'sp-thread-msg admin'
+        newMsg.innerHTML = `<p style="font-size:13px">${esc(message)}</p><div class="sp-thread-meta">You · just now</div>`
+        repliesEl.appendChild(newMsg)
+        repliesEl.scrollTop = repliesEl.scrollHeight
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Send Reply')
+      }
+    }
+  </script>
+</body>
+</html>

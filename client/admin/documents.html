@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bank Documents — SchoolPay Admin</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Bank Documents</h1>
+        <div class="sp-topbar-right">
+          <span style="font-size:13px;color:var(--muted)" id="sp-topbar-school"></span>
+          <select class="sp-select" id="status-filter" style="padding:8px 12px;font-size:13px" onchange="init()">
+            <option value="pending">Pending Review</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+      </header>
+
+      <div class="sp-admin-content">
+        <div class="sp-card">
+          <div class="sp-table-wrap">
+            <table class="sp-table">
+              <thead><tr><th>Student</th><th>ID</th><th>Fee Type</th><th>Reference</th><th>Amount</th><th>Uploaded</th><th>Document</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="docs-tbody">
+                <tr class="sp-loading-row"><td colspan="9"><span class="sp-spinner dark"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review modal -->
+  <div class="sp-modal-overlay hidden" id="review-modal">
+    <div class="sp-modal" style="max-width:480px">
+      <div class="sp-modal-header">
+        <span class="sp-modal-title" id="review-modal-title">Review Document</span>
+        <button class="sp-modal-close" onclick="closeReview()">x</button>
+      </div>
+      <div class="sp-modal-body">
+        <div id="review-doc-preview" style="margin-bottom:16px;text-align:center"></div>
+        <p style="font-size:13px;margin-bottom:16px">Student: <strong id="review-student"></strong> &nbsp;|&nbsp; Amount: <strong id="review-amount"></strong></p>
+        <div class="sp-form-group">
+          <label class="sp-label">Note (optional)</label>
+          <textarea class="sp-textarea" id="review-note" placeholder="Add a note for the student..." style="min-height:80px"></textarea>
+        </div>
+        <div id="review-error" style="color:var(--danger);font-size:13px;display:none"></div>
+      </div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeReview()">Cancel</button>
+        <button class="btn btn-danger" id="reject-btn" onclick="submitReview('reject')">Reject</button>
+        <button class="btn btn-success" id="approve-btn" onclick="submitReview('approve')">Approve & Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireAuth(['school_admin','bursar'])
+    if (user) { initAdminPage({ activePage: 'documents', titleText: 'Bank Documents' }); init() }
+
+    let reviewTarget = null
+
+    async function init() {
+      const school = getSchool()
+      const status = document.getElementById('status-filter').value
+      const tbody  = document.getElementById('docs-tbody')
+      tbody.innerHTML = `<tr class="sp-loading-row"><td colspan="9"><span class="sp-spinner dark"></span></td></tr>`
+      try {
+        const docs = await apiFetch(`/s/${school.slug}/admin/documents?status=${status}`)
+        if (!docs.length) {
+          tbody.innerHTML = `<tr><td colspan="9"><div class="sp-empty"><p>No ${status} documents</p></div></td></tr>`
+          return
+        }
+        tbody.innerHTML = docs.map(d => `
+          <tr>
+            <td data-label="Student">${esc(d.student_name)}</td>
+            <td data-label="ID"><code>${esc(d.student_id)}</code></td>
+            <td data-label="Fee Type">${esc(d.fee_type || '—')}</td>
+            <td data-label="Reference"><code style="font-size:11px;word-break:break-all">${esc(d.reference)}</code></td>
+            <td data-label="Amount"><strong>${formatNaira(d.amount)}</strong></td>
+            <td data-label="Uploaded">${formatDateTime(d.uploaded_at)}</td>
+            <td data-label="File">
+              <a href="${esc(d.file_path)}" target="_blank" class="btn btn-outline btn-sm">View File</a>
+            </td>
+            <td data-label="Status">${badgeHTML(d.review_status)}</td>
+            <td data-label="">
+              ${d.review_status === 'pending'
+                ? `<button class="btn btn-primary btn-sm" onclick='openReview(${JSON.stringify(d)})'>Review</button>`
+                : `<small style="color:var(--muted)">${esc(d.review_note || '')}</small>`}
+            </td>
+          </tr>`).join('')
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    function openReview(doc) {
+      reviewTarget = doc
+      const isMeta = doc.mime_type && doc.mime_type.startsWith('image/')
+      document.getElementById('review-doc-preview').innerHTML = isMeta
+        ? `<img src="${doc.file_path}" style="max-height:200px;border-radius:6px;border:1px solid var(--rule)" />`
+        : `<a href="${doc.file_path}" target="_blank" class="btn btn-outline">Open Document</a>`
+      document.getElementById('review-student').textContent = `${doc.student_name} (${doc.student_id})`
+      document.getElementById('review-amount').textContent  = formatNaira(doc.amount)
+      document.getElementById('review-note').value = ''
+      document.getElementById('review-error').style.display = 'none'
+      document.getElementById('review-modal').classList.remove('hidden')
+    }
+    function closeReview() { document.getElementById('review-modal').classList.add('hidden') }
+
+    async function submitReview(action) {
+      const school  = getSchool()
+      const errEl   = document.getElementById('review-error')
+      const appBtn  = document.getElementById('approve-btn')
+      const rejBtn  = document.getElementById('reject-btn')
+      errEl.style.display = 'none'
+      btnLoading(action === 'approve' ? appBtn : rejBtn, true)
+      try {
+        await apiFetch(`/s/${school.slug}/admin/documents/${reviewTarget.id}/review`, {
+          method: 'PATCH',
+          body: JSON.stringify({ action, note: document.getElementById('review-note').value.trim() }),
+        })
+        toast(action === 'approve' ? 'Document approved. Payment confirmed and receipt sent!' : 'Document rejected.', action === 'approve' ? 'success' : 'warning')
+        closeReview()
+        init()
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(appBtn, false, 'Approve & Confirm')
+        btnLoading(rejBtn, false, 'Reject')
+      }
+    }
+  </script>
+</body>
+</html>

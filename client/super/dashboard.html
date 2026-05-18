@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Dashboard — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Dashboard</h1>
+        <div class="sp-topbar-right">
+          <button class="btn btn-primary btn-sm" onclick="openOnboardModal()">+ Onboard School</button>
+        </div>
+      </header>
+
+      <div class="sp-admin-content">
+        <!-- Stats -->
+        <div class="sp-stats-grid" id="stats-grid">
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-schools">—</div><div class="sp-stat-label">Total Schools</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-active">—</div><div class="sp-stat-label">Active Schools</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-primary">—</div><div class="sp-stat-label">Primary</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-secondary">—</div><div class="sp-stat-label">Secondary</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-university">—</div><div class="sp-stat-label">Universities</div></div>
+        </div>
+
+        <!-- Schools table -->
+        <div class="sp-card">
+          <div class="sp-card-header">
+            <span class="sp-card-title">All Schools</span>
+            <input class="sp-input" id="search-input" placeholder="Search schools..." style="max-width:240px;padding:8px 12px;font-size:13px" oninput="filterTable(this.value)" />
+          </div>
+          <div class="sp-table-wrap">
+            <table class="sp-table" id="schools-table">
+              <thead>
+                <tr>
+                  <th>School Name</th><th>Slug</th><th>Type</th><th>Status</th><th>Created</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="schools-tbody">
+                <tr class="sp-loading-row"><td colspan="6"><span class="sp-spinner dark"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Onboard School Modal -->
+  <div class="sp-modal-overlay hidden" id="onboard-modal">
+    <div class="sp-modal" style="max-width:640px">
+      <div class="sp-modal-header">
+        <span class="sp-modal-title">Onboard New School</span>
+        <button class="sp-modal-close" onclick="closeOnboardModal()">x</button>
+      </div>
+      <div class="sp-modal-body">
+        <form id="onboard-form">
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">School Name *</label>
+              <input class="sp-input" id="o-name" placeholder="Greenfield Academy" required />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Slug (URL identifier) *</label>
+              <input class="sp-input" id="o-slug" placeholder="greenfield-academy" required pattern="[a-z0-9\-]+" />
+              <small class="sp-input-hint">Lowercase, hyphens only. Used in student portal URL.</small>
+            </div>
+          </div>
+          <div class="sp-form-group">
+            <label class="sp-label">School Type *</label>
+            <select class="sp-select" id="o-type" required>
+              <option value="">— select —</option>
+              <option value="primary">Primary</option>
+              <option value="secondary">Secondary</option>
+              <option value="university">University / Tertiary</option>
+            </select>
+          </div>
+
+          <p style="font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.04em">Bank Details</p>
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">Bank Name</label>
+              <input class="sp-input" id="o-bank-name" placeholder="First Bank" />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Account Number</label>
+              <input class="sp-input" id="o-bank-account" placeholder="0123456789" />
+            </div>
+          </div>
+          <div class="sp-form-group">
+            <label class="sp-label">Account Name</label>
+            <input class="sp-input" id="o-bank-account-name" placeholder="Greenfield Academy Ltd" />
+          </div>
+
+          <p style="font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.04em">Paystack Keys</p>
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">Public Key</label>
+              <input class="sp-input" id="o-ps-pub" placeholder="pk_live_..." />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Secret Key</label>
+              <input class="sp-input" id="o-ps-sec" placeholder="sk_live_..." type="password" />
+            </div>
+          </div>
+
+          <p style="font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.04em">First Admin Account *</p>
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">Admin Name *</label>
+              <input class="sp-input" id="o-admin-name" required />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Admin Email *</label>
+              <input class="sp-input" type="email" id="o-admin-email" required />
+            </div>
+          </div>
+          <div class="sp-form-group">
+            <label class="sp-label">Admin Password *</label>
+            <input class="sp-input" type="password" id="o-admin-password" required minlength="8" />
+          </div>
+          <div id="onboard-error" style="color:var(--danger);font-size:13px;display:none;margin-bottom:10px"></div>
+        </form>
+      </div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeOnboardModal()">Cancel</button>
+        <button class="btn btn-primary" id="onboard-btn" onclick="submitOnboard()">Create School</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Suspend confirm modal -->
+  <div class="sp-modal-overlay hidden" id="suspend-modal">
+    <div class="sp-modal" style="max-width:400px">
+      <div class="sp-modal-header"><span class="sp-modal-title">Suspend School</span><button class="sp-modal-close" onclick="closeSuspend()">x</button></div>
+      <div class="sp-modal-body"><p>Are you sure you want to suspend <strong id="suspend-name"></strong>? Their portal will stop working immediately.</p></div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeSuspend()">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmSuspend()">Suspend</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireSuperAuth()
+    if (user) { initAdminPage({ activePage: 'dashboard', titleText: 'Super Dashboard' }); init() }
+
+    let allSchools = []
+    let suspendTarget = null
+
+    async function init() {
+      try {
+        allSchools = await apiFetch('/schools')
+        renderStats(allSchools)
+        renderTable(allSchools)
+      } catch (err) {
+        toast(err.message, 'error')
+        document.getElementById('schools-tbody').innerHTML =
+          `<tr class="sp-loading-row"><td colspan="6">Failed to load schools</td></tr>`
+      }
+    }
+
+    function renderStats(schools) {
+      document.getElementById('stat-schools').textContent    = schools.length
+      document.getElementById('stat-active').textContent     = schools.filter(s => s.active).length
+      document.getElementById('stat-primary').textContent    = schools.filter(s => s.type === 'primary').length
+      document.getElementById('stat-secondary').textContent  = schools.filter(s => s.type === 'secondary').length
+      document.getElementById('stat-university').textContent = schools.filter(s => s.type === 'university').length
+    }
+
+    function renderTable(schools) {
+      const tbody = document.getElementById('schools-tbody')
+      if (!schools.length) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="sp-empty"><p>No schools yet. Onboard one to get started.</p></div></td></tr>`
+        return
+      }
+      tbody.innerHTML = schools.map(s => `
+        <tr>
+          <td data-label="School"><strong>${s.name}</strong></td>
+          <td data-label="Slug"><code>${s.slug}</code></td>
+          <td data-label="Type"><span class="badge badge-primary">${s.type}</span></td>
+          <td data-label="Status">${s.active ? '<span class="badge badge-confirmed">Active</span>' : '<span class="badge badge-rejected">Suspended</span>'}</td>
+          <td data-label="Created">${formatDate(s.created_at)}</td>
+          <td data-label="">
+            <a href="/portal/index.html?school=${s.slug}" target="_blank" class="btn btn-outline btn-sm">Portal</a>
+            ${s.active ? `<button class="btn btn-danger btn-sm" onclick="openSuspend('${s.id}','${s.name}')">Suspend</button>` : ''}
+          </td>
+        </tr>`).join('')
+    }
+
+    function filterTable(q) {
+      const filtered = allSchools.filter(s =>
+        s.name.toLowerCase().includes(q.toLowerCase()) ||
+        s.slug.toLowerCase().includes(q.toLowerCase()) ||
+        s.type.toLowerCase().includes(q.toLowerCase())
+      )
+      renderTable(filtered)
+    }
+
+    function openOnboardModal()  { document.getElementById('onboard-modal').classList.remove('hidden') }
+    function closeOnboardModal() { document.getElementById('onboard-modal').classList.add('hidden') }
+
+    async function submitOnboard() {
+      const btn = document.getElementById('onboard-btn')
+      const errEl = document.getElementById('onboard-error')
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+      try {
+        await apiFetch('/schools', {
+          method: 'POST',
+          body: JSON.stringify({
+            name:                  document.getElementById('o-name').value.trim(),
+            slug:                  document.getElementById('o-slug').value.trim(),
+            type:                  document.getElementById('o-type').value,
+            bank_name:             document.getElementById('o-bank-name').value.trim(),
+            bank_account:          document.getElementById('o-bank-account').value.trim(),
+            bank_account_name:     document.getElementById('o-bank-account-name').value.trim(),
+            paystack_public_key:   document.getElementById('o-ps-pub').value.trim(),
+            paystack_secret_key:   document.getElementById('o-ps-sec').value.trim(),
+            admin_name:            document.getElementById('o-admin-name').value.trim(),
+            admin_email:           document.getElementById('o-admin-email').value.trim(),
+            admin_password:        document.getElementById('o-admin-password').value,
+          }),
+        })
+        toast('School onboarded successfully!', 'success')
+        closeOnboardModal()
+        document.getElementById('onboard-form').reset()
+        init()
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Create School')
+      }
+    }
+
+    function openSuspend(id, name) {
+      suspendTarget = id
+      document.getElementById('suspend-name').textContent = name
+      document.getElementById('suspend-modal').classList.remove('hidden')
+    }
+    function closeSuspend() { document.getElementById('suspend-modal').classList.add('hidden') }
+    async function confirmSuspend() {
+      try {
+        await apiFetch(`/schools/${suspendTarget}/suspend`, { method: 'PATCH' })
+        toast('School suspended', 'warning')
+        closeSuspend()
+        init()
+      } catch (err) { toast(err.message, 'error') }
+    }
+  </script>
+</body>
+</html>

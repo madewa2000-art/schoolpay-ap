@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raise a Complaint — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-portal-page">
+    <nav class="sp-portal-nav">
+      <div class="sp-portal-nav-brand">
+        <span class="sp-portal-school-name" id="sp-portal-school-name">SchoolPay</span>
+      </div>
+      <div class="sp-portal-nav-links" id="sp-portal-nav-links"></div>
+    </nav>
+
+    <div class="sp-portal-body">
+      <div class="sp-portal-header">
+        <h1>Complaints & Disputes</h1>
+        <p>Raise a payment dispute or track an existing complaint</p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:900px;margin:0 auto">
+        <!-- Raise complaint -->
+        <div class="sp-payment-card">
+          <h3 style="font-size:14px;font-weight:700;color:var(--black);margin-bottom:20px">Raise a Complaint</h3>
+
+          <div id="complaint-form">
+            <div class="sp-form-group">
+              <label class="sp-label">Student ID *</label>
+              <input class="sp-input" id="c-student-id" required />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Full Name *</label>
+              <input class="sp-input" id="c-student-name" required />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Email Address *</label>
+              <input class="sp-input" type="email" id="c-student-email" required />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Payment Reference (if applicable)</label>
+              <input class="sp-input" id="c-reference" placeholder="e.g. GREEN-PRI-2026-00012-SCH" />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Subject *</label>
+              <input class="sp-input" id="c-subject" placeholder="e.g. Payment not reflecting after 3 days" required />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Description *</label>
+              <textarea class="sp-textarea" id="c-body" placeholder="Describe the issue in detail…" required></textarea>
+            </div>
+            <div id="complaint-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+            <button class="btn btn-primary btn-block" id="complaint-btn" onclick="submitComplaint()">Submit Complaint</button>
+          </div>
+
+          <div id="complaint-success" style="display:none;text-align:center;padding:20px 0">
+            <h3 style="color:var(--black);margin-bottom:8px">Complaint Submitted</h3>
+            <p style="font-size:13px;color:var(--muted)">We will respond within 2-3 working days via email.</p>
+            <button class="btn btn-outline" style="margin-top:16px" onclick="resetComplaint()">Raise Another</button>
+          </div>
+        </div>
+
+        <!-- Track complaint -->
+        <div class="sp-payment-card">
+          <h3 style="font-size:14px;font-weight:700;color:var(--black);margin-bottom:20px">Track a Complaint</h3>
+
+          <div class="sp-form-group">
+            <label class="sp-label">Your Email Address *</label>
+            <input class="sp-input" id="track-email" placeholder="your@email.com" />
+          </div>
+          <div id="track-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+          <button class="btn btn-primary" id="track-btn" onclick="trackComplaints()">Find Complaints</button>
+
+          <div id="track-results" style="margin-top:20px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    async function init() {
+      const slug = getPortalSlug()
+      if (!slug) return
+      try {
+        const d = await apiFetch(`/s/${slug}/public`)
+        initPortalNav(d.school, 'complaint')
+      } catch {}
+    }
+
+    async function submitComplaint() {
+      const slug  = getPortalSlug()
+      const errEl = document.getElementById('complaint-error')
+      const btn   = document.getElementById('complaint-btn')
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+      try {
+        await apiFetch(`/s/${slug}/complaints`, {
+          method: 'POST',
+          body: JSON.stringify({
+            student_id:    document.getElementById('c-student-id').value.trim(),
+            student_name:  document.getElementById('c-student-name').value.trim(),
+            student_email: document.getElementById('c-student-email').value.trim(),
+            reference:     document.getElementById('c-reference').value.trim(),
+            subject:       document.getElementById('c-subject').value.trim(),
+            body:          document.getElementById('c-body').value.trim(),
+          }),
+        })
+        document.getElementById('complaint-form').style.display    = 'none'
+        document.getElementById('complaint-success').style.display = 'block'
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Submit Complaint')
+      }
+    }
+
+    function resetComplaint() {
+      document.getElementById('complaint-form').style.display    = 'block'
+      document.getElementById('complaint-success').style.display = 'none'
+      document.getElementById('complaint-error').style.display   = 'none'
+      document.getElementById('c-student-id').value = ''
+      document.getElementById('c-student-name').value = ''
+      document.getElementById('c-student-email').value = ''
+      document.getElementById('c-reference').value = ''
+      document.getElementById('c-subject').value = ''
+      document.getElementById('c-body').value = ''
+    }
+
+    async function trackComplaints() {
+      const slug  = getPortalSlug()
+      const email = document.getElementById('track-email').value.trim()
+      const errEl = document.getElementById('track-error')
+      const btn   = document.getElementById('track-btn')
+      const res   = document.getElementById('track-results')
+      errEl.style.display = 'none'
+      if (!email) { errEl.textContent = 'Email is required'; errEl.style.display = 'block'; return }
+      btnLoading(btn, true)
+      try {
+        const data = await apiFetch(`/s/${slug}/complaints/track?student_email=${encodeURIComponent(email)}`)
+        if (!data.length) {
+          res.innerHTML = '<p style="font-size:13px;color:var(--muted)">No complaints found for this email.</p>'
+        } else {
+          res.innerHTML = data.map(c => `
+            <div style="border:1px solid var(--rule);border-radius:var(--radius);padding:14px;margin-bottom:12px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <strong style="font-size:13px;color:var(--black)">${c.subject}</strong>
+                ${badgeHTML(c.status)}
+              </div>
+              <p style="font-size:11px;color:var(--muted);margin:4px 0">${formatDate(c.created_at)}</p>
+              ${(c.replies || []).length ? `
+                <div style="margin-top:10px;border-top:1px solid var(--rule);padding-top:10px">
+                  <p style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px">${c.replies.length} reply(ies)</p>
+                  ${c.replies.filter(r => r.is_admin).slice(-1).map(r => `
+                    <div style="background:var(--surface);padding:8px 12px;border-radius:6px;font-size:13px;border-left:2px solid var(--black)">
+                      <strong>Admin:</strong> ${r.message}
+                    </div>`).join('')}
+                </div>` : ''}
+            </div>`).join('')
+        }
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+      }
+      btnLoading(btn, false, 'Find Complaints')
+    }
+
+    init()
+  </script>
+</body>
+</html>

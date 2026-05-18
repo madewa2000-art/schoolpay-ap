@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upload Bank Proof — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-portal-page">
+    <nav class="sp-portal-nav">
+      <div class="sp-portal-nav-brand">
+        <span class="sp-portal-school-name" id="sp-portal-school-name">SchoolPay</span>
+      </div>
+      <div class="sp-portal-nav-links" id="sp-portal-nav-links"></div>
+    </nav>
+
+    <div class="sp-portal-body">
+      <div class="sp-portal-header">
+        <h1>Upload Bank Payment Proof</h1>
+        <p>Upload your deposit slip, teller, or bank screenshot so we can confirm your payment</p>
+      </div>
+
+      <div class="sp-payment-card">
+        <div id="upload-form">
+          <div class="sp-form-group">
+            <label class="sp-label">Payment Reference *</label>
+            <input class="sp-input" id="reference" placeholder="e.g. GREEN-PRI-2026-00012-SCH" required />
+            <small class="sp-input-hint">This is the reference you received when you initiated the bank payment</small>
+          </div>
+
+          <div class="sp-form-group" style="margin-top:20px">
+            <label class="sp-label">Upload Document *</label>
+            <div class="sp-dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+              <p>Click to upload or drag &amp; drop</p>
+              <p><strong>JPG, PNG, PDF</strong> — max 5MB</p>
+              <div class="sp-file-chosen" id="file-chosen" style="display:none"></div>
+            </div>
+            <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.pdf,.webp" style="display:none" onchange="handleFile(this)" />
+          </div>
+
+          <div id="upload-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+          <button class="btn btn-primary btn-block" id="upload-btn" onclick="doUpload()">Submit Document</button>
+        </div>
+
+        <div id="upload-success" style="display:none;text-align:center;padding:20px 0">
+          <h2 style="color:var(--black);margin-bottom:8px">Document Submitted</h2>
+          <p style="color:var(--muted);font-size:13px">Your bank proof has been received and is under review.<br>You will receive an email when your payment is confirmed.</p>
+          <div style="margin-top:24px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+            <a href="history.html" class="btn btn-primary">Check Payment Status</a>
+            <button class="btn btn-outline" onclick="resetForm()">Upload Another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    let selectedFile = null
+
+    async function init() {
+      const slug = getPortalSlug()
+      const preRef = new URLSearchParams(window.location.search).get('ref') ||
+                     sessionStorage.getItem('sp_bank_ref')
+      if (preRef) document.getElementById('reference').value = preRef
+
+      if (!slug) return
+      try {
+        const d = await apiFetch(`/s/${slug}/public`)
+        initPortalNav(d.school, 'upload')
+      } catch {}
+
+      // Drag & drop
+      const zone = document.getElementById('dropzone')
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover') })
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragover'))
+      zone.addEventListener('drop', e => {
+        e.preventDefault(); zone.classList.remove('dragover')
+        const f = e.dataTransfer.files[0]
+        if (f) applyFile(f)
+      })
+    }
+
+    function handleFile(input) { if (input.files[0]) applyFile(input.files[0]) }
+
+    function applyFile(file) {
+      const allowed = ['image/jpeg','image/png','image/webp','application/pdf']
+      if (!allowed.includes(file.type)) { toast('Only JPG, PNG, or PDF files allowed', 'error'); return }
+      if (file.size > 5 * 1024 * 1024) { toast('File must be under 5MB', 'error'); return }
+      selectedFile = file
+      const el = document.getElementById('file-chosen')
+      el.style.display = 'block'
+      el.textContent = `✓ ${file.name} (${(file.size / 1024).toFixed(1)} KB)`
+    }
+
+    async function doUpload() {
+      const slug   = getPortalSlug()
+      const ref    = document.getElementById('reference').value.trim()
+      const errEl  = document.getElementById('upload-error')
+      const btn    = document.getElementById('upload-btn')
+      errEl.style.display = 'none'
+
+      if (!ref)          { errEl.textContent = 'Reference number is required'; errEl.style.display = 'block'; return }
+      if (!selectedFile) { errEl.textContent = 'Please select a document to upload'; errEl.style.display = 'block'; return }
+
+      btnLoading(btn, true)
+      try {
+        const fd = new FormData()
+        fd.append('reference', ref)
+        fd.append('document',  selectedFile)
+        await apiUpload(`/s/${slug}/documents/upload`, fd)
+        document.getElementById('upload-form').style.display    = 'none'
+        document.getElementById('upload-success').style.display = 'block'
+        sessionStorage.removeItem('sp_bank_ref')
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Submit Document')
+      }
+    }
+
+    function resetForm() {
+      selectedFile = null
+      document.getElementById('reference').value = ''
+      document.getElementById('file-chosen').style.display = 'none'
+      document.getElementById('upload-form').style.display    = 'block'
+      document.getElementById('upload-success').style.display = 'none'
+      document.getElementById('upload-error').style.display   = 'none'
+      document.getElementById('file-input').value = ''
+    }
+
+    init()
+  </script>
+</body>
+</html>

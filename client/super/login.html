@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Admin Login — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-auth-page">
+    <div class="sp-auth-card">
+      <div class="sp-auth-logo">
+        <div class="sp-auth-logo-wordmark">SchoolPay</div>
+        <p>Platform Administration</p>
+      </div>
+      <h2>Super Admin Login</h2>
+
+      <form id="login-form">
+        <div class="sp-form-group">
+          <label class="sp-label" for="email">Email Address</label>
+          <input class="sp-input" type="email" id="email" placeholder="admin@schoolpay.local" required />
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label" for="password">Password</label>
+          <input class="sp-input" type="password" id="password" placeholder="••••••••" required />
+        </div>
+        <div id="error-msg" style="color:var(--danger);font-size:13px;margin-bottom:14px;display:none"></div>
+        <button class="btn btn-primary btn-block" type="submit" id="submit-btn">Login</button>
+      </form>
+
+      <div class="sp-auth-footer">
+        <a href="/admin/login.html">← School Admin Login</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    // Redirect if already logged in as super admin
+    const existing = getUser()
+    if (existing?.role === 'super_admin') window.location.href = '/super/dashboard.html'
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const btn = document.getElementById('submit-btn')
+      const errEl = document.getElementById('error-msg')
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+
+      try {
+        const data = await apiFetch('/auth/super-login', {
+          method: 'POST',
+          body: JSON.stringify({
+            email:    document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        })
+        setAuth({ token: data.token, user: data.user, school: null })
+        window.location.href = '/super/dashboard.html'
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Login')
+      }
+    })
+  </script>
+</body>
+</html>

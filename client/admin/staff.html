@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff — SchoolPay Admin</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Staff Management</h1>
+        <div class="sp-topbar-right">
+          <span style="font-size:13px;color:var(--muted)" id="sp-topbar-school"></span>
+          <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Staff</button>
+        </div>
+      </header>
+
+      <div class="sp-admin-content">
+        <div class="sp-card">
+          <div class="sp-table-wrap">
+            <table class="sp-table">
+              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Added</th></tr></thead>
+              <tbody id="staff-tbody">
+                <tr class="sp-loading-row"><td colspan="5"><span class="sp-spinner dark"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Staff Modal -->
+  <div class="sp-modal-overlay hidden" id="staff-modal">
+    <div class="sp-modal">
+      <div class="sp-modal-header">
+        <span class="sp-modal-title">Add Staff Member</span>
+        <button class="sp-modal-close" onclick="closeAddModal()">x</button>
+      </div>
+      <div class="sp-modal-body">
+        <div class="sp-form-group">
+          <label class="sp-label">Full Name *</label>
+          <input class="sp-input" id="s-name" required />
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label">Email Address *</label>
+          <input class="sp-input" type="email" id="s-email" required />
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label">Role *</label>
+          <select class="sp-select" id="s-role">
+            <option value="bursar">Bursar</option>
+            <option value="accountant">Accountant</option>
+          </select>
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label">Password *</label>
+          <input class="sp-input" type="password" id="s-password" minlength="8" required />
+          <small class="sp-input-hint">Minimum 8 characters. Share securely with the staff member.</small>
+        </div>
+        <div id="staff-error" style="color:var(--danger);font-size:13px;display:none"></div>
+      </div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeAddModal()">Cancel</button>
+        <button class="btn btn-primary" id="staff-save-btn" onclick="saveStaff()">Add Staff</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireAuth(['school_admin'])
+    if (user) { initAdminPage({ activePage: 'staff', titleText: 'Staff Management' }); init() }
+
+    async function init() {
+      const school = getSchool()
+      const tbody  = document.getElementById('staff-tbody')
+      try {
+        const staff = await apiFetch(`/s/${school.slug}/admin/staff`)
+        if (!staff.length) {
+          tbody.innerHTML = `<tr><td colspan="5"><div class="sp-empty"><p>No staff members yet</p></div></td></tr>`
+          return
+        }
+        tbody.innerHTML = staff.map(s => `
+          <tr>
+            <td data-label="Name"><strong>${s.name}</strong></td>
+            <td data-label="Email">${s.email}</td>
+            <td data-label="Role"><span class="badge badge-primary">${s.role.replace('_', ' ')}</span></td>
+            <td data-label="Status">${s.active ? '<span class="badge badge-confirmed">Active</span>' : '<span class="badge badge-rejected">Inactive</span>'}</td>
+            <td data-label="Added">${formatDate(s.created_at)}</td>
+          </tr>`).join('')
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    function openAddModal()  { document.getElementById('staff-modal').classList.remove('hidden') }
+    function closeAddModal() { document.getElementById('staff-modal').classList.add('hidden') }
+
+    async function saveStaff() {
+      const btn   = document.getElementById('staff-save-btn')
+      const errEl = document.getElementById('staff-error')
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+      const school = getSchool()
+      try {
+        await apiFetch(`/s/${school.slug}/admin/staff`, {
+          method: 'POST',
+          body: JSON.stringify({
+            name:     document.getElementById('s-name').value.trim(),
+            email:    document.getElementById('s-email').value.trim(),
+            role:     document.getElementById('s-role').value,
+            password: document.getElementById('s-password').value,
+          }),
+        })
+        toast('Staff member added!', 'success')
+        closeAddModal()
+        document.getElementById('s-name').value = ''
+        document.getElementById('s-email').value = ''
+        document.getElementById('s-password').value = ''
+        init()
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Add Staff')
+      }
+    }
+  </script>
+</body>
+</html>

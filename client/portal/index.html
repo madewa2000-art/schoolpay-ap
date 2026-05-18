@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Make a Payment — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-portal-page">
+    <nav class="sp-portal-nav">
+      <div class="sp-portal-nav-brand">
+        <span class="sp-portal-school-name" id="sp-portal-school-name">SchoolPay</span>
+      </div>
+      <div class="sp-portal-nav-links" id="sp-portal-nav-links"></div>
+    </nav>
+
+    <div class="sp-portal-body">
+      <!-- School not found -->
+      <div id="no-school" style="display:none;text-align:center;padding:60px 20px">
+        <h2 style="color:var(--black)">School Not Found</h2>
+        <p style="color:var(--muted);margin-top:8px">No school matching that ID. Please check your link.</p>
+      </div>
+
+      <!-- Payment form -->
+      <div id="payment-section" style="display:none">
+        <div class="sp-portal-header">
+          <h1 id="school-title">Make a Payment</h1>
+          <p id="school-subtitle">Select your fee type and complete the payment below</p>
+        </div>
+
+        <div class="sp-payment-card">
+          <!-- Step 1: Fee selection -->
+          <div id="step-fee">
+            <p class="sp-label" style="margin-bottom:10px">Select Fee Type</p>
+            <div class="sp-fee-grid" id="fee-grid">
+              <div style="color:var(--muted);font-size:13px"><span class="sp-spinner dark"></span> Loading fees...</div>
+            </div>
+
+            <div class="sp-amount-display" id="amount-display">&#x20A6; 0.00</div>
+
+            <p class="sp-label" style="margin-bottom:10px">Payment Method</p>
+            <div class="sp-method-tabs">
+              <button class="sp-method-tab active" id="tab-paystack" onclick="setMethod('paystack')">Pay Online (Paystack)</button>
+              <button class="sp-method-tab" id="tab-bank" onclick="setMethod('bank')">Bank Transfer / Cheque</button>
+            </div>
+
+            <p class="sp-label" style="margin-top:20px;margin-bottom:10px">Your Details</p>
+            <div class="sp-form-row">
+              <div class="sp-form-group">
+                <label class="sp-label" for="student-id">Student ID *</label>
+                <input class="sp-input" id="student-id" placeholder="e.g. STU/2024/001" required />
+              </div>
+              <div class="sp-form-group">
+                <label class="sp-label" for="student-class">Class / Level</label>
+                <input class="sp-input" id="student-class" placeholder="e.g. JSS 2 / 300 Level" />
+              </div>
+            </div>
+            <div class="sp-form-row">
+              <div class="sp-form-group">
+                <label class="sp-label" for="student-name">Full Name *</label>
+                <input class="sp-input" id="student-name" placeholder="As on school record" required />
+              </div>
+              <div class="sp-form-group">
+                <label class="sp-label" for="student-email">Email Address *</label>
+                <input class="sp-input" type="email" id="student-email" placeholder="Receipt will be sent here" required />
+              </div>
+            </div>
+
+            <div id="form-error" style="color:var(--danger);font-size:12px;margin-bottom:12px;display:none"></div>
+            <button class="btn btn-primary btn-block" id="pay-btn" onclick="initiate()">
+              <span id="pay-btn-label">Pay Now</span>
+            </button>
+            <p style="text-align:center;font-size:11px;color:var(--subtle);margin-top:12px">Secured by SchoolPay</p>
+          </div>
+
+          <!-- Bank details step -->
+          <div id="step-bank" style="display:none">
+            <h3 style="color:var(--black);margin-bottom:6px">Bank Payment Instructions</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:20px">
+              Make your payment to the account below. Use your <strong style="color:var(--black)">reference number</strong> as the payment narration.
+            </p>
+            <div class="sp-bank-info">
+              <p><strong>Bank:</strong> <span id="bank-name">—</span></p>
+              <p><strong>Account Number:</strong> <span id="bank-account">—</span></p>
+              <p><strong>Account Name:</strong> <span id="bank-account-name">—</span></p>
+              <p><strong>Amount:</strong> <span id="bank-amount">—</span></p>
+            </div>
+            <p class="sp-label" style="margin-bottom:6px">Your Payment Reference</p>
+            <div class="sp-ref-box" id="bank-reference">—</div>
+            <p style="font-size:11px;color:var(--danger);margin:8px 0 20px">Use this reference exactly as your bank narration. Keep a copy.</p>
+            <button class="btn btn-primary btn-block" onclick="goToUpload()">Upload Bank Proof</button>
+            <button class="btn btn-outline btn-block" style="margin-top:10px" onclick="resetForm()">Make Another Payment</button>
+          </div>
+
+          <!-- Success step -->
+          <div id="step-success" style="display:none;text-align:center;padding:20px 0">
+            <div style="width:48px;height:48px;border-radius:50%;background:var(--success);margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <h2 style="color:var(--black)">Payment Successful</h2>
+            <p style="color:var(--muted);margin-top:8px;font-size:13px">Receipt emailed to <strong id="success-email"></strong></p>
+            <div class="sp-ref-box" id="success-receipt" style="margin:16px 0"></div>
+            <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
+              <a id="receipt-link" class="btn btn-primary" href="#">View Receipt</a>
+              <button class="btn btn-outline" onclick="resetForm()">Make Another Payment</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="https://js.paystack.co/v1/inline.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    let school = null
+    let feeTypes = []
+    let selectedFee = null
+    let method = 'paystack'
+
+    async function init() {
+      const slug = getPortalSlug()
+      if (!slug) { document.getElementById('no-school').style.display = 'block'; return }
+      try {
+        const data = await apiFetch(`/s/${slug}/public`)
+        school   = data.school
+        feeTypes = data.feeTypes
+        document.getElementById('payment-section').style.display = 'block'
+        document.getElementById('school-title').textContent = school.name
+        document.getElementById('school-subtitle').textContent = `${school.type.charAt(0).toUpperCase() + school.type.slice(1)} School Fee Payment Portal`
+        initPortalNav(school, 'index')
+        renderFees()
+      } catch (err) {
+        document.getElementById('no-school').style.display = 'block'
+      }
+    }
+
+    function renderFees() {
+      const grid = document.getElementById('fee-grid')
+      if (!feeTypes.length) {
+        grid.innerHTML = '<p style="color:var(--muted);font-size:13px">No active fee types configured.</p>'
+        return
+      }
+      grid.innerHTML = feeTypes.map((f, i) => `
+        <label class="sp-fee-option${i === 0 ? ' selected' : ''}" onclick="selectFee('${esc(f.id)}', this)">
+          <input type="radio" name="fee" value="${esc(f.id)}" ${i === 0 ? 'checked' : ''} />
+          <div class="sp-fee-name">${esc(f.name)}</div>
+          <div class="sp-fee-amount">${formatNaira(f.amount)}</div>
+          <div class="sp-fee-badge">${esc(f.term || '')} ${esc(f.academic_year || '')} ${f.is_mandatory ? '· Required' : ''}</div>
+        </label>`).join('')
+      if (feeTypes.length) selectFee(feeTypes[0].id, null)
+    }
+
+    function selectFee(id, el) {
+      document.querySelectorAll('.sp-fee-option').forEach(o => o.classList.remove('selected'))
+      if (el) el.classList.add('selected')
+      selectedFee = feeTypes.find(f => f.id === id)
+      document.getElementById('amount-display').textContent = selectedFee ? formatNaira(selectedFee.amount) : '₦ 0.00'
+      document.getElementById('pay-btn-label').textContent = selectedFee && method === 'paystack' ? `Pay ${formatNaira(selectedFee.amount)}` : 'Proceed'
+    }
+
+    function setMethod(m) {
+      method = m
+      document.getElementById('tab-paystack').classList.toggle('active', m === 'paystack')
+      document.getElementById('tab-bank').classList.toggle('active', m === 'bank')
+      if (selectedFee) document.getElementById('pay-btn-label').textContent = m === 'paystack' ? `Pay ${formatNaira(selectedFee.amount)}` : 'Get Bank Details'
+    }
+
+    async function initiate() {
+      const errEl = document.getElementById('form-error')
+      const btn   = document.getElementById('pay-btn')
+      errEl.style.display = 'none'
+
+      const student_id    = document.getElementById('student-id').value.trim()
+      const student_name  = document.getElementById('student-name').value.trim()
+      const student_email = document.getElementById('student-email').value.trim()
+      const student_class = document.getElementById('student-class').value.trim()
+
+      if (!selectedFee)    { errEl.textContent = 'Please select a fee type'; errEl.style.display = 'block'; return }
+      if (!student_id)     { errEl.textContent = 'Student ID is required'; errEl.style.display = 'block'; return }
+      if (!student_name)   { errEl.textContent = 'Full name is required'; errEl.style.display = 'block'; return }
+      if (!student_email)  { errEl.textContent = 'Email address is required'; errEl.style.display = 'block'; return }
+
+      btnLoading(btn, true)
+      try {
+        const data = await apiFetch(`/s/${school.slug}/payments/initiate`, {
+          method: 'POST',
+          body: JSON.stringify({ payment_type_id: selectedFee.id, student_id, student_name, student_email, student_class, method }),
+        })
+
+        if (method === 'bank') {
+          showBankStep(data, student_email)
+        } else {
+          openPaystack(data, student_email)
+        }
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+      }
+      btnLoading(btn, false, `<span id="pay-btn-label">Pay Now</span>`)
+    }
+
+    function showBankStep(data, email) {
+      document.getElementById('step-fee').style.display  = 'none'
+      document.getElementById('step-bank').style.display = 'block'
+      const bd = data.bankDetails
+      document.getElementById('bank-name').textContent         = bd.bank_name || '—'
+      document.getElementById('bank-account').textContent      = bd.account_number || '—'
+      document.getElementById('bank-account-name').textContent = bd.account_name || '—'
+      document.getElementById('bank-amount').textContent       = formatNaira(bd.amount)
+      document.getElementById('bank-reference').textContent    = bd.reference
+      sessionStorage.setItem('sp_bank_ref',  bd.reference)
+      sessionStorage.setItem('sp_payer_email', email)
+    }
+
+    function openPaystack(data, email) {
+      const handler = PaystackPop.setup({
+        key:       school.paystack_public_key,
+        email,
+        amount:    Math.round(selectedFee.amount * 100),
+        ref:       data.payment.reference,
+        currency:  'NGN',
+        callback: async (response) => {
+          try {
+            const verified = await apiFetch(`/s/${school.slug}/payments/verify?ref=${response.reference}`)
+            document.getElementById('step-fee').style.display     = 'none'
+            document.getElementById('step-success').style.display = 'block'
+            document.getElementById('success-email').textContent  = email
+            document.getElementById('success-receipt').textContent = verified.receipt_number || 'Processing...'
+            if (verified.receipt_number) {
+              document.getElementById('receipt-link').href = `/portal/receipt.html?school=${school.slug}&receipt=${verified.receipt_number}`
+            }
+          } catch { toast('Payment recorded. Check your email for receipt.', 'success') }
+        },
+        onClose: () => toast('Payment cancelled', 'warning'),
+      })
+      handler.openIframe()
+    }
+
+    function goToUpload() {
+      window.location.href = `/portal/upload.html?school=${school.slug}`
+    }
+
+    function resetForm() {
+      document.getElementById('step-fee').style.display     = 'block'
+      document.getElementById('step-bank').style.display    = 'none'
+      document.getElementById('step-success').style.display = 'none'
+      document.getElementById('form-error').style.display   = 'none'
+    }
+
+    init()
+  </script>
+</body>
+</html>

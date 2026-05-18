@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Payments — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-portal-page">
+    <nav class="sp-portal-nav">
+      <div class="sp-portal-nav-brand">
+        <span class="sp-portal-school-name" id="sp-portal-school-name">SchoolPay</span>
+      </div>
+      <div class="sp-portal-nav-links" id="sp-portal-nav-links"></div>
+    </nav>
+
+    <div class="sp-portal-body">
+      <div class="sp-portal-header">
+        <h1>My Payment History</h1>
+        <p>Enter your Student ID and email to view all your payments</p>
+      </div>
+
+      <div class="sp-payment-card">
+        <div id="lookup-form">
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label" for="student-id">Student ID *</label>
+              <input class="sp-input" id="student-id" placeholder="e.g. STU/2024/001" required />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label" for="student-email">Email Address *</label>
+              <input class="sp-input" type="email" id="student-email" placeholder="your@email.com" required />
+            </div>
+          </div>
+          <div id="lookup-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+          <button class="btn btn-primary" id="lookup-btn" onclick="lookup()">Search Payments</button>
+        </div>
+
+        <div id="results-section" style="display:none;margin-top:28px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="font-size:15px;font-weight:700;color:var(--black)">Payment History</h3>
+            <span id="results-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <div class="sp-table-wrap">
+            <table class="sp-table">
+              <thead><tr><th>Fee Type</th><th>Reference</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th><th>Receipt</th></tr></thead>
+              <tbody id="results-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    let schoolData = null
+
+    async function init() {
+      const slug = getPortalSlug()
+      if (!slug) return
+      try {
+        const d = await apiFetch(`/s/${slug}/public`)
+        schoolData = d.school
+        initPortalNav(schoolData, 'history')
+      } catch { /* slug might be wrong */ }
+    }
+
+    async function lookup() {
+      const slug   = getPortalSlug()
+      const id     = document.getElementById('student-id').value.trim()
+      const email  = document.getElementById('student-email').value.trim()
+      const errEl  = document.getElementById('lookup-error')
+      const btn    = document.getElementById('lookup-btn')
+      errEl.style.display = 'none'
+      if (!id || !email) { errEl.textContent = 'Student ID and email are required'; errEl.style.display = 'block'; return }
+      btnLoading(btn, true)
+      try {
+        const data = await apiFetch(`/s/${slug}/payments/history?student_id=${encodeURIComponent(id)}&student_email=${encodeURIComponent(email)}`)
+        document.getElementById('results-section').style.display = 'block'
+        document.getElementById('results-count').textContent = `${data.length} payment(s) found`
+        const tbody = document.getElementById('results-tbody')
+        if (!data.length) {
+          tbody.innerHTML = `<tr><td colspan="7"><div class="sp-empty"><p>No payments found for this student ID and email.</p></div></td></tr>`
+          return
+        }
+        tbody.innerHTML = data.map(p => `
+          <tr>
+            <td data-label="Fee Type">${esc(p.fee_type_name || '—')}</td>
+            <td data-label="Reference"><code style="font-size:11px;word-break:break-all">${esc(p.reference)}</code></td>
+            <td data-label="Amount"><strong>${formatNaira(p.amount)}</strong></td>
+            <td data-label="Method">${esc(p.method)}</td>
+            <td data-label="Status">${badgeHTML(p.status)}</td>
+            <td data-label="Date">${formatDate(p.created_at)}</td>
+            <td data-label="">${p.receipt_number
+              ? `<a href="/portal/receipt.html?school=${esc(slug)}&receipt=${esc(p.receipt_number)}" class="btn btn-outline btn-sm">View</a>`
+              : (p.status === 'pending' && p.method === 'bank'
+                  ? `<a href="/portal/upload.html?school=${esc(slug)}&ref=${esc(p.reference)}" class="btn btn-outline btn-sm">Upload Proof</a>`
+                  : '—')}</td>
+          </tr>`).join('')
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+      }
+      btnLoading(btn, false, 'Search Payments')
+    }
+
+    init()
+  </script>
+</body>
+</html>

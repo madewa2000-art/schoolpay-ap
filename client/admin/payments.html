@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Tracker — SchoolPay Admin</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Payment Tracker</h1>
+        <div class="sp-topbar-right"><span style="font-size:13px;color:var(--muted)" id="sp-topbar-school"></span></div>
+      </header>
+
+      <div class="sp-admin-content">
+        <div class="sp-card">
+          <button class="sp-filter-toggle" id="filter-toggle" onclick="toggleFilters()">
+            Filters <span class="sp-filter-toggle-arrow">&#9660;</span>
+          </button>
+          <div class="sp-filters collapsed" id="filter-panel">
+            <div class="sp-form-group">
+              <label class="sp-label">Student ID</label>
+              <input class="sp-input" id="f-student" placeholder="Search ID..." />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Reference</label>
+              <input class="sp-input" id="f-ref" placeholder="Search ref..." />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Status</label>
+              <select class="sp-select" id="f-status">
+                <option value="">All</option>
+                <option value="pending">Pending</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="failed">Failed</option>
+                <option value="refunded">Refunded</option>
+              </select>
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Method</label>
+              <select class="sp-select" id="f-method">
+                <option value="">All</option>
+                <option value="paystack">Online (Paystack)</option>
+                <option value="bank">Bank</option>
+              </select>
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">From</label>
+              <input class="sp-input" type="date" id="f-from" />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">To</label>
+              <input class="sp-input" type="date" id="f-to" />
+            </div>
+            <div class="sp-form-group" style="align-self:flex-end">
+              <button class="btn btn-primary btn-block" onclick="loadPayments()">Apply Filters</button>
+            </div>
+          </div>
+
+          <div class="sp-table-wrap">
+            <table class="sp-table">
+              <thead>
+                <tr><th>Student</th><th>ID</th><th>Fee Type</th><th>Reference</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th><th>Receipt</th><th>Action</th></tr>
+              </thead>
+              <tbody id="payments-tbody">
+                <tr class="sp-loading-row"><td colspan="10"><span class="sp-spinner dark"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding:12px 24px;font-size:12px;color:var(--muted);border-top:1px solid var(--rule)">
+            Showing <span id="result-count">—</span> results
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm modal -->
+  <div class="sp-modal-overlay hidden" id="confirm-modal">
+    <div class="sp-modal" style="max-width:380px">
+      <div class="sp-modal-header"><span class="sp-modal-title">Confirm Payment</span><button class="sp-modal-close" onclick="closeConfirm()">x</button></div>
+      <div class="sp-modal-body">
+        <p>Manually confirm this bank payment?</p>
+        <p style="margin-top:10px;font-size:13px;color:var(--muted)">Reference: <strong id="confirm-ref"></strong></p>
+        <p style="font-size:13px;color:var(--muted)">Amount: <strong id="confirm-amt"></strong></p>
+      </div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeConfirm()">Cancel</button>
+        <button class="btn btn-success" id="confirm-btn" onclick="doConfirm()">Confirm Payment</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireAuth(['school_admin','bursar','accountant'])
+    if (user) { initAdminPage({ activePage: 'payments', titleText: 'Payment Tracker' }); loadPayments() }
+
+    function toggleFilters() {
+      const panel  = document.getElementById('filter-panel')
+      const toggle = document.getElementById('filter-toggle')
+      const open   = panel.classList.toggle('collapsed')
+      toggle.classList.toggle('open', !open)
+    }
+
+    // On desktop: always show filters, remove collapsed class
+    if (window.innerWidth > 768) document.getElementById('filter-panel').classList.remove('collapsed')
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 768) document.getElementById('filter-panel').classList.remove('collapsed')
+    })
+
+    let confirmTarget = null
+
+    async function loadPayments() {
+      const school = getSchool()
+      const params = new URLSearchParams()
+      const s = (id) => document.getElementById(id).value
+      if (s('f-student')) params.set('student_id', s('f-student'))
+      if (s('f-ref'))     params.set('reference',  s('f-ref'))
+      if (s('f-status'))  params.set('status',     s('f-status'))
+      if (s('f-method'))  params.set('method',     s('f-method'))
+      if (s('f-from'))    params.set('from',        s('f-from'))
+      if (s('f-to'))      params.set('to',          s('f-to'))
+      params.set('limit', 100)
+
+      const tbody = document.getElementById('payments-tbody')
+      tbody.innerHTML = `<tr class="sp-loading-row"><td colspan="10"><span class="sp-spinner dark"></span></td></tr>`
+
+      try {
+        const data = await apiFetch(`/s/${school.slug}/admin/payments?${params}`)
+        document.getElementById('result-count').textContent = data.length
+        if (!data.length) {
+          tbody.innerHTML = `<tr><td colspan="10"><div class="sp-empty"><p>No payments found</p></div></td></tr>`
+          return
+        }
+        tbody.innerHTML = data.map(p => `
+          <tr>
+            <td data-label="Student">${esc(p.student_name)}</td>
+            <td data-label="ID"><code>${esc(p.student_id)}</code></td>
+            <td data-label="Fee Type">${esc(p.fee_type_name || '—')}</td>
+            <td data-label="Reference"><code style="font-size:11px;word-break:break-all">${esc(p.reference)}</code></td>
+            <td data-label="Amount"><strong>${formatNaira(p.amount)}</strong></td>
+            <td data-label="Method">${esc(p.method)}</td>
+            <td data-label="Status">${badgeHTML(p.status)}</td>
+            <td data-label="Date">${formatDate(p.created_at)}</td>
+            <td data-label="Receipt">${p.receipt_number ? `<a href="/portal/receipt.html?school=${esc(school.slug)}&receipt=${esc(p.receipt_number)}" target="_blank" class="btn btn-outline btn-sm">View</a>` : '—'}</td>
+            <td data-label="">
+              ${p.status === 'pending' && p.method === 'bank'
+                ? `<button class="btn btn-success btn-sm" onclick="openConfirm('${esc(p.id)}','${esc(p.reference)}',${p.amount})">Confirm</button>`
+                : ''}
+            </td>
+          </tr>`).join('')
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    function openConfirm(id, ref, amt) {
+      confirmTarget = id
+      document.getElementById('confirm-ref').textContent = ref
+      document.getElementById('confirm-amt').textContent = formatNaira(amt)
+      document.getElementById('confirm-modal').classList.remove('hidden')
+    }
+    function closeConfirm() { document.getElementById('confirm-modal').classList.add('hidden') }
+
+    async function doConfirm() {
+      const btn = document.getElementById('confirm-btn')
+      btnLoading(btn, true)
+      try {
+        const school = getSchool()
+        await apiFetch(`/s/${school.slug}/admin/payments/${confirmTarget}/confirm`, { method: 'PATCH' })
+        toast('Payment confirmed and receipt generated!', 'success')
+        closeConfirm()
+        loadPayments()
+      } catch (err) {
+        toast(err.message, 'error')
+        btnLoading(btn, false, 'Confirm Payment')
+      }
+    }
+  </script>
+</body>
+</html>

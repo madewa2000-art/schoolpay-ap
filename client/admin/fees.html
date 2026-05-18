@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fee Types — SchoolPay Admin</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Fee Types</h1>
+        <div class="sp-topbar-right">
+          <span style="font-size:13px;color:var(--muted)" id="sp-topbar-school"></span>
+          <button class="btn btn-primary btn-sm" onclick="openAddModal()" id="add-btn">+ Add Fee Type</button>
+        </div>
+      </header>
+
+      <div class="sp-admin-content">
+        <div class="sp-card">
+          <div class="sp-table-wrap">
+            <table class="sp-table">
+              <thead><tr><th>Name</th><th>Amount</th><th>Term</th><th>Academic Year</th><th>Mandatory</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="fees-tbody">
+                <tr class="sp-loading-row"><td colspan="7"><span class="sp-spinner dark"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="sp-modal-overlay hidden" id="fee-modal">
+    <div class="sp-modal">
+      <div class="sp-modal-header">
+        <span class="sp-modal-title" id="fee-modal-title">Add Fee Type</span>
+        <button class="sp-modal-close" onclick="closeFeeModal()">x</button>
+      </div>
+      <div class="sp-modal-body">
+        <input type="hidden" id="fee-id" />
+        <div class="sp-form-group">
+          <label class="sp-label">Fee Name *</label>
+          <input class="sp-input" id="fee-name" placeholder="e.g. School Fees" required />
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label">Description</label>
+          <input class="sp-input" id="fee-desc" placeholder="Optional description" />
+        </div>
+        <div class="sp-form-row">
+          <div class="sp-form-group">
+            <label class="sp-label">Amount (₦) *</label>
+            <input class="sp-input" type="number" id="fee-amount" min="0" step="0.01" required />
+          </div>
+          <div class="sp-form-group">
+            <label class="sp-label">Mandatory?</label>
+            <select class="sp-select" id="fee-mandatory">
+              <option value="true">Yes — required for clearance</option>
+              <option value="false">No — optional</option>
+            </select>
+          </div>
+        </div>
+        <div class="sp-form-row">
+          <div class="sp-form-group">
+            <label class="sp-label">Term / Semester</label>
+            <input class="sp-input" id="fee-term" placeholder="e.g. First Term" />
+          </div>
+          <div class="sp-form-group">
+            <label class="sp-label">Academic Year</label>
+            <input class="sp-input" id="fee-year" placeholder="e.g. 2025/2026" />
+          </div>
+        </div>
+        <div id="fee-error" style="color:var(--danger);font-size:13px;display:none"></div>
+      </div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeFeeModal()">Cancel</button>
+        <button class="btn btn-primary" id="fee-save-btn" onclick="saveFee()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireAuth(['school_admin','bursar','accountant'])
+    const canEdit = user?.role === 'school_admin'
+    if (user) { initAdminPage({ activePage: 'fees', titleText: 'Fee Types' }); if (!canEdit) document.getElementById('add-btn').style.display = 'none'; init() }
+
+    async function init() {
+      const school = getSchool()
+      const tbody  = document.getElementById('fees-tbody')
+      try {
+        const fees = await apiFetch(`/s/${school.slug}/admin/fee-types`)
+        if (!fees.length) {
+          tbody.innerHTML = `<tr><td colspan="7"><div class="sp-empty"><p>No fee types yet</p></div></td></tr>`
+          return
+        }
+        tbody.innerHTML = fees.map(f => `
+          <tr>
+            <td data-label="Name"><strong>${f.name}</strong>${f.description ? `<br><small style="color:var(--muted)">${f.description}</small>` : ''}</td>
+            <td data-label="Amount">${formatNaira(f.amount)}</td>
+            <td data-label="Term">${f.term || '—'}</td>
+            <td data-label="Year">${f.academic_year || '—'}</td>
+            <td data-label="Mandatory">${f.is_mandatory ? '<span class="badge badge-confirmed">Yes</span>' : '<span class="badge badge-pending">No</span>'}</td>
+            <td data-label="Status">${f.active ? '<span class="badge badge-confirmed">Active</span>' : '<span class="badge badge-rejected">Archived</span>'}</td>
+            <td data-label="">
+              ${canEdit ? `
+                <button class="btn btn-outline btn-sm" onclick='openEditModal(${JSON.stringify(f)})'>Edit</button>
+                ${f.active ? `<button class="btn btn-danger btn-sm" onclick="archiveFee('${f.id}')">Archive</button>` : ''}
+              ` : '—'}
+            </td>
+          </tr>`).join('')
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    function openAddModal() {
+      document.getElementById('fee-id').value = ''
+      document.getElementById('fee-modal-title').textContent = 'Add Fee Type'
+      document.getElementById('fee-name').value = ''
+      document.getElementById('fee-desc').value = ''
+      document.getElementById('fee-amount').value = ''
+      document.getElementById('fee-term').value = ''
+      document.getElementById('fee-year').value = ''
+      document.getElementById('fee-mandatory').value = 'true'
+      document.getElementById('fee-modal').classList.remove('hidden')
+    }
+    function openEditModal(f) {
+      document.getElementById('fee-id').value = f.id
+      document.getElementById('fee-modal-title').textContent = 'Edit Fee Type'
+      document.getElementById('fee-name').value = f.name
+      document.getElementById('fee-desc').value = f.description || ''
+      document.getElementById('fee-amount').value = f.amount
+      document.getElementById('fee-term').value = f.term || ''
+      document.getElementById('fee-year').value = f.academic_year || ''
+      document.getElementById('fee-mandatory').value = f.is_mandatory ? 'true' : 'false'
+      document.getElementById('fee-modal').classList.remove('hidden')
+    }
+    function closeFeeModal() { document.getElementById('fee-modal').classList.add('hidden') }
+
+    async function saveFee() {
+      const btn   = document.getElementById('fee-save-btn')
+      const errEl = document.getElementById('fee-error')
+      const id    = document.getElementById('fee-id').value
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+      const school = getSchool()
+      const body = {
+        name:          document.getElementById('fee-name').value.trim(),
+        description:   document.getElementById('fee-desc').value.trim(),
+        amount:        parseFloat(document.getElementById('fee-amount').value),
+        term:          document.getElementById('fee-term').value.trim(),
+        academic_year: document.getElementById('fee-year').value.trim(),
+        is_mandatory:  document.getElementById('fee-mandatory').value === 'true',
+      }
+      try {
+        if (id) {
+          await apiFetch(`/s/${school.slug}/admin/fee-types/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+        } else {
+          await apiFetch(`/s/${school.slug}/admin/fee-types`, { method: 'POST', body: JSON.stringify(body) })
+        }
+        toast(`Fee type ${id ? 'updated' : 'created'}!`, 'success')
+        closeFeeModal()
+        init()
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Save')
+      }
+    }
+
+    async function archiveFee(id) {
+      if (!confirm('Archive this fee type? It will no longer appear on the student portal.')) return
+      try {
+        const school = getSchool()
+        await apiFetch(`/s/${school.slug}/admin/fee-types/${id}`, { method: 'DELETE' })
+        toast('Fee type archived', 'warning')
+        init()
+      } catch (err) { toast(err.message, 'error') }
+    }
+  </script>
+</body>
+</html>

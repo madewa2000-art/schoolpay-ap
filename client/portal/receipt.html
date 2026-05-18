@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Receipt — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-portal-page">
+    <nav class="sp-portal-nav">
+      <div class="sp-portal-nav-brand">
+        <span class="sp-portal-school-name" id="sp-portal-school-name">SchoolPay</span>
+      </div>
+      <div class="sp-portal-nav-links" id="sp-portal-nav-links"></div>
+    </nav>
+
+    <div class="sp-portal-body" style="max-width:720px">
+      <div id="loading" style="text-align:center;padding:60px">
+        <span class="sp-spinner dark"></span>
+        <p style="color:var(--muted);margin-top:12px">Loading receipt...</p>
+      </div>
+      <div id="not-found" style="display:none;text-align:center;padding:60px">
+        <h2 style="color:var(--black);margin-bottom:8px">Receipt Not Found</h2>
+        <p style="color:var(--muted)">No receipt found for that number.</p>
+      </div>
+
+      <div id="receipt-section" style="display:none">
+        <div class="sp-receipt-actions">
+          <button class="btn btn-primary" onclick="doPrint()">Print</button>
+          <button class="btn btn-outline" onclick="doDownloadPdf()">Download PDF</button>
+        </div>
+
+        <!-- Printable receipt -->
+        <div id="receipt-printable" style="background:white;border:1px solid #E4E4E4;border-radius:6px;padding:40px;font-family:'Segoe UI',sans-serif">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0F0F0F;padding-bottom:16px;margin-bottom:24px">
+            <div>
+              <h2 style="margin:0;color:#0F0F0F;font-size:20px;font-weight:800" id="r-school-name"></h2>
+              <p style="margin:4px 0 0;font-size:12px;color:#777">Official Payment Receipt</p>
+            </div>
+            <div style="text-align:right">
+              <p style="font-size:11px;color:#999;margin:0">Receipt No.</p>
+              <p style="font-size:17px;font-weight:800;color:#0F0F0F;margin:2px 0;font-family:monospace" id="r-receipt-number"></p>
+              <p style="font-size:11px;color:#999;margin:0" id="r-date"></p>
+            </div>
+          </div>
+
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tr style="background:#F5F5F5"><td style="padding:10px 12px;font-weight:700;width:40%;color:#1A1A1A">Student Name</td><td style="padding:10px 12px;color:#2D2D2D" id="r-student-name"></td></tr>
+            <tr><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Student ID</td><td style="padding:10px 12px;color:#2D2D2D" id="r-student-id"></td></tr>
+            <tr style="background:#F5F5F5"><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Class / Level</td><td style="padding:10px 12px;color:#2D2D2D" id="r-class"></td></tr>
+            <tr><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Fee Type</td><td style="padding:10px 12px;color:#2D2D2D" id="r-fee-type"></td></tr>
+            <tr style="background:#F5F5F5"><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Reference</td><td style="padding:10px 12px;font-family:monospace;color:#2D2D2D" id="r-reference"></td></tr>
+            <tr><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Payment Method</td><td style="padding:10px 12px;color:#2D2D2D" id="r-method"></td></tr>
+            <tr style="background:#0F0F0F;color:white">
+              <td style="padding:14px 12px;font-weight:800;font-size:15px">Amount Paid</td>
+              <td style="padding:14px 12px;font-size:18px;font-weight:800" id="r-amount"></td>
+            </tr>
+          </table>
+
+          <div style="margin-top:48px;display:flex;justify-content:space-between">
+            <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:8px;width:180px;font-size:12px;color:#555">Authorized Signature</div></div>
+            <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:8px;width:180px;font-size:12px;color:#555">School Stamp</div></div>
+          </div>
+          <p style="text-align:center;margin-top:32px;font-size:11px;color:#aaa">
+            This is a computer-generated receipt and is valid without a physical signature.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script src="../js/pdf.js"></script>
+  <script>
+    let receiptData = null
+
+    async function init() {
+      const slug    = getPortalSlug()
+      const params  = new URLSearchParams(window.location.search)
+      const receiptNum = params.get('receipt')
+      if (!slug || !receiptNum) { show('not-found'); return }
+
+      try {
+        const d = await apiFetch(`/s/${slug}/public`)
+        initPortalNav(d.school, 'history')
+      } catch {}
+
+      try {
+        receiptData = await apiFetch(`/s/${slug}/receipts/${receiptNum}`)
+        populateReceipt(receiptData)
+        show('receipt-section')
+      } catch {
+        show('not-found')
+      }
+    }
+
+    function show(id) {
+      document.getElementById('loading').style.display = 'none'
+      document.getElementById(id).style.display = 'block'
+    }
+
+    function populateReceipt(r) {
+      const fmt  = (n) => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+      const date = (d) => d ? new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
+      document.getElementById('r-school-name').textContent   = r.school_name || ''
+      document.getElementById('r-receipt-number').textContent = r.receipt_number
+      document.getElementById('r-date').textContent          = date(r.issued_at)
+      document.getElementById('r-student-name').textContent  = r.student_name
+      document.getElementById('r-student-id').textContent    = r.student_id
+      document.getElementById('r-class').textContent         = r.student_class || '—'
+      document.getElementById('r-fee-type').textContent      = r.fee_type
+      document.getElementById('r-reference').textContent     = r.reference
+      document.getElementById('r-method').textContent        = r.method === 'paystack' ? 'Online (Paystack)' : 'Bank Deposit'
+      document.getElementById('r-amount').textContent        = fmt(r.amount)
+      document.getElementById('sp-portal-school-name').textContent = r.school_name || 'SchoolPay'
+    }
+
+    function doPrint() { window.print() }
+
+    function doDownloadPdf() {
+      if (!receiptData) return
+      try { printReceipt(receiptData) }
+      catch { toast('PDF generation failed. Use the Print button instead.', 'error') }
+    }
+
+    init()
+  </script>
+</body>
+</html>

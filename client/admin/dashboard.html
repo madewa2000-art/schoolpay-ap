@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — SchoolPay Admin</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-admin-wrapper">
+    <div id="sp-sidebar-container"></div>
+    <div class="sp-admin-main" id="sp-admin-main">
+      <header class="sp-topbar">
+        <h1 class="sp-topbar-title" id="sp-page-title">Dashboard</h1>
+        <div class="sp-topbar-right">
+          <span style="font-size:13px;color:var(--muted)" id="sp-topbar-school"></span>
+          <a id="portal-link" class="btn btn-outline btn-sm" target="_blank">View Portal</a>
+        </div>
+      </header>
+
+      <div class="sp-admin-content">
+        <div class="sp-stats-grid">
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-total">—</div><div class="sp-stat-label">Total Collected</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-month">—</div><div class="sp-stat-label">This Month</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-confirmed">—</div><div class="sp-stat-label">Confirmed Payments</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-pending">—</div><div class="sp-stat-label">Pending Payments</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-docs">—</div><div class="sp-stat-label">Pending Documents</div></div>
+          <div class="sp-stat-card"><div class="sp-stat-value" id="stat-complaints">—</div><div class="sp-stat-label">Open Complaints</div></div>
+        </div>
+
+        <!-- Share portal link with students -->
+        <div class="sp-share-card">
+          <span class="sp-share-label">Student Portal</span>
+          <input id="portal-url" class="sp-input sp-share-url" readonly style="cursor:text" />
+          <button class="btn btn-primary btn-sm" onclick="copyLink()">Copy Link</button>
+          <a id="portal-open" class="btn btn-outline btn-sm" target="_blank">Open</a>
+        </div>
+
+        <div class="sp-card">
+          <div class="sp-card-header">
+            <span class="sp-card-title">Recent Payments</span>
+            <a href="/admin/payments.html" class="btn btn-outline btn-sm">View All</a>
+          </div>
+          <div class="sp-table-wrap">
+            <table class="sp-table">
+              <thead><tr><th>Student</th><th>ID</th><th>Fee Type</th><th>Reference</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr></thead>
+              <tbody id="recent-tbody">
+                <tr class="sp-loading-row"><td colspan="8"><span class="sp-spinner dark"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const user = requireAuth(['school_admin','bursar','accountant'])
+    if (user) { initAdminPage({ activePage: 'dashboard', titleText: 'Dashboard' }); init() }
+
+    async function init() {
+      const school = getSchool()
+      if (!school) return
+      const portalUrl = `${location.origin}/portal/index.html?school=${school.slug}`
+      document.getElementById('portal-link').href = portalUrl
+      document.getElementById('portal-url').value  = portalUrl
+      document.getElementById('portal-open').href  = portalUrl
+      const slug = school.slug
+      try {
+        const [stats, payments] = await Promise.all([
+          apiFetch(`/s/${slug}/admin/stats`),
+          apiFetch(`/s/${slug}/admin/payments?limit=10`),
+        ])
+        document.getElementById('stat-total').textContent     = formatNaira(stats.total_collected)
+        document.getElementById('stat-month').textContent     = formatNaira(stats.collected_this_month)
+        document.getElementById('stat-confirmed').textContent = stats.confirmed
+        document.getElementById('stat-pending').textContent   = stats.pending
+        document.getElementById('stat-docs').textContent      = stats.pending_documents
+        document.getElementById('stat-complaints').textContent = stats.open_complaints
+
+        const tbody = document.getElementById('recent-tbody')
+        if (!payments.length) {
+          tbody.innerHTML = `<tr><td colspan="8"><div class="sp-empty"><p>No payments yet</p></div></td></tr>`
+          return
+        }
+        tbody.innerHTML = payments.map(p => `
+          <tr>
+            <td data-label="Student">${p.student_name}</td>
+            <td data-label="ID"><code>${p.student_id}</code></td>
+            <td data-label="Fee Type">${p.fee_type_name || '—'}</td>
+            <td data-label="Reference"><code style="font-size:11px;word-break:break-all">${p.reference}</code></td>
+            <td data-label="Amount"><strong>${formatNaira(p.amount)}</strong></td>
+            <td data-label="Method">${p.method}</td>
+            <td data-label="Status">${badgeHTML(p.status)}</td>
+            <td data-label="Date">${formatDate(p.created_at)}</td>
+          </tr>`).join('')
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    function copyLink() {
+      const url = document.getElementById('portal-url').value
+      navigator.clipboard.writeText(url).then(() => toast('Portal link copied!', 'success')).catch(() => {
+        document.getElementById('portal-url').select()
+        document.execCommand('copy')
+        toast('Portal link copied!', 'success')
+      })
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Login — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-auth-page">
+    <div class="sp-auth-card">
+      <div class="sp-auth-logo">
+        <div class="sp-auth-logo-wordmark">SchoolPay</div>
+        <p>School Administration Portal</p>
+      </div>
+      <h2>Staff Login</h2>
+
+      <form id="login-form">
+        <div class="sp-form-group">
+          <label class="sp-label" for="slug">School ID (Slug)</label>
+          <input class="sp-input" type="text" id="slug" placeholder="e.g. greenfield-academy" required />
+          <small class="sp-input-hint">Your school's unique identifier</small>
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label" for="email">Email Address</label>
+          <input class="sp-input" type="email" id="email" placeholder="you@school.edu" required />
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label" for="password">Password</label>
+          <input class="sp-input" type="password" id="password" placeholder="••••••••" required />
+        </div>
+        <div id="error-msg" style="color:var(--danger);font-size:13px;margin-bottom:14px;display:none"></div>
+        <button class="btn btn-primary btn-block" type="submit" id="submit-btn">Login</button>
+      </form>
+
+      <div class="sp-auth-footer">
+        <a href="/super/login.html">Platform Admin →</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="sp-toast-container"></div>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    const existing = getUser()
+    if (existing && ['school_admin','bursar','accountant'].includes(existing.role)) {
+      window.location.href = '/admin/dashboard.html'
+    }
+
+    // Pre-fill slug from URL ?school= if present
+    const preSlug = new URLSearchParams(window.location.search).get('school')
+    if (preSlug) document.getElementById('slug').value = preSlug
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const btn   = document.getElementById('submit-btn')
+      const errEl = document.getElementById('error-msg')
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+      try {
+        const data = await apiFetch('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            slug:     document.getElementById('slug').value.trim(),
+            email:    document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        })
+        setAuth({ token: data.token, user: data.user, school: data.school })
+        window.location.href = '/admin/dashboard.html'
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+        btnLoading(btn, false, 'Login')
+      }
+    })
+  </script>
+</body>
+</html>

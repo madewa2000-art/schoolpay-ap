@@ -1,0 +1,22 @@
+# Environment variables — never commit real secrets
+.env
+server/.env
+*.env.local
+*.env.production
+
+# Node modules
+node_modules/
+server/node_modules/
+
+# Local file uploads (now handled by Cloudinary, but guard the folder anyway)
+server/uploads/
+
+# OS and editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
