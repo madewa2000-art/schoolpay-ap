@@ -89,9 +89,9 @@
         }
         tbody.innerHTML = staff.map(s => `
           <tr>
-            <td data-label="Name"><strong>${s.name}</strong></td>
-            <td data-label="Email">${s.email}</td>
-            <td data-label="Role"><span class="badge badge-primary">${s.role.replace('_', ' ')}</span></td>
+            <td data-label="Name"><strong>${esc(s.name)}</strong></td>
+            <td data-label="Email">${esc(s.email)}</td>
+            <td data-label="Role"><span class="badge badge-primary">${esc(s.role.replace('_', ' '))}</span></td>
             <td data-label="Status">${s.active ? '<span class="badge badge-confirmed">Active</span>' : '<span class="badge badge-rejected">Inactive</span>'}</td>
             <td data-label="Added">${formatDate(s.created_at)}</td>
           </tr>`).join('')

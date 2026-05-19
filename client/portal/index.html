@@ -180,10 +180,11 @@
       const student_email = document.getElementById('student-email').value.trim()
       const student_class = document.getElementById('student-class').value.trim()
 
-      if (!selectedFee)    { errEl.textContent = 'Please select a fee type'; errEl.style.display = 'block'; return }
-      if (!student_id)     { errEl.textContent = 'Student ID is required'; errEl.style.display = 'block'; return }
-      if (!student_name)   { errEl.textContent = 'Full name is required'; errEl.style.display = 'block'; return }
-      if (!student_email)  { errEl.textContent = 'Email address is required'; errEl.style.display = 'block'; return }
+      if (!selectedFee)              { errEl.textContent = 'Please select a fee type'; errEl.style.display = 'block'; return }
+      if (Number(selectedFee.amount) <= 0) { errEl.textContent = 'This fee has no amount set. Please contact the school.'; errEl.style.display = 'block'; return }
+      if (!student_id)               { errEl.textContent = 'Student ID is required'; errEl.style.display = 'block'; return }
+      if (!student_name)             { errEl.textContent = 'Full name is required'; errEl.style.display = 'block'; return }
+      if (!student_email)            { errEl.textContent = 'Email address is required'; errEl.style.display = 'block'; return }
 
       btnLoading(btn, true)
       try {

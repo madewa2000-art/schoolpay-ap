@@ -49,7 +49,6 @@ function buildAdminSidebar({ activePage, school, user }) {
   const nav = isSuper
     ? [
         { page: 'dashboard', label: 'Dashboard', href: '/super/dashboard.html' },
-        { page: 'schools',   label: 'Schools',   href: '/super/schools.html'   },
       ]
     : [
         { page: 'dashboard',  label: 'Dashboard',       href: '/admin/dashboard.html'  },

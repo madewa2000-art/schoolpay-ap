@@ -184,14 +184,14 @@
       }
       tbody.innerHTML = schools.map(s => `
         <tr>
-          <td data-label="School"><strong>${s.name}</strong></td>
-          <td data-label="Slug"><code>${s.slug}</code></td>
-          <td data-label="Type"><span class="badge badge-primary">${s.type}</span></td>
+          <td data-label="School"><strong>${esc(s.name)}</strong></td>
+          <td data-label="Slug"><code>${esc(s.slug)}</code></td>
+          <td data-label="Type"><span class="badge badge-primary">${esc(s.type)}</span></td>
           <td data-label="Status">${s.active ? '<span class="badge badge-confirmed">Active</span>' : '<span class="badge badge-rejected">Suspended</span>'}</td>
           <td data-label="Created">${formatDate(s.created_at)}</td>
           <td data-label="">
-            <a href="/portal/index.html?school=${s.slug}" target="_blank" class="btn btn-outline btn-sm">Portal</a>
-            ${s.active ? `<button class="btn btn-danger btn-sm" onclick="openSuspend('${s.id}','${s.name}')">Suspend</button>` : ''}
+            <a href="/portal/index.html?school=${esc(s.slug)}" target="_blank" class="btn btn-outline btn-sm">Portal</a>
+            ${s.active ? `<button class="btn btn-danger btn-sm" onclick="openSuspend('${esc(s.id)}','${esc(s.name)}')">Suspend</button>` : ''}
           </td>
         </tr>`).join('')
     }

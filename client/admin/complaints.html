@@ -118,7 +118,7 @@
     function openThread(complaint) {
       currentComplaint = complaint
       document.getElementById('thread-subject').textContent = complaint.subject
-      document.getElementById('thread-meta').textContent = `${complaint.student_name} (${complaint.student_id}) Â· ${complaint.student_email} Â· ${formatDate(complaint.created_at)}`
+      document.getElementById('thread-meta').textContent = `${complaint.student_name} (${complaint.student_id}) · ${complaint.student_email} · ${formatDate(complaint.created_at)}`
       document.getElementById('thread-body').textContent = complaint.body
       document.getElementById('thread-status').value = complaint.status
       document.getElementById('reply-text').value = ''
@@ -163,9 +163,6 @@
         toast('Reply sent!', 'success')
         document.getElementById('reply-text').value = ''
         btnLoading(btn, false, 'Send Reply')
-        // Reload the complaint to show new reply
-        const updated = await apiFetch(`/s/${school.slug}/admin/complaints?limit=1`)
-        // Just close and re-open won't refresh, so append locally
         const repliesEl = document.getElementById('thread-replies')
         const newMsg = document.createElement('div')
         newMsg.className = 'sp-thread-msg admin'
