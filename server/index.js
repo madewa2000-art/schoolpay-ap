@@ -3,6 +3,7 @@ import cors     from 'cors'
 import helmet   from 'helmet'
 import dotenv   from 'dotenv'
 import path     from 'path'
+import fs       from 'fs'
 import { fileURLToPath } from 'url'
 
 import rateLimit   from 'express-rate-limit'
@@ -16,7 +17,11 @@ import webhookRoutes    from './routes/webhooks.js'
 
 dotenv.config()
 
-// ─── Startup safety guard ─────────────────────────────────────────────────────
+// ─── Startup safety guards ────────────────────────────────────────────────────
+if (!process.env.DATABASE_URL) {
+  console.error('FATAL: DATABASE_URL is not set. Add a PostgreSQL database and link it to this service on Railway.')
+  process.exit(1)
+}
 const DEV_JWT = 'dev-secret-change-in-production-schoolpay-2026'
 if (process.env.NODE_ENV === 'production' && process.env.JWT_SECRET === DEV_JWT) {
   console.error('FATAL: JWT_SECRET is still the default dev value. Set a strong secret before running in production.')
@@ -128,4 +133,21 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: message })
 })
 
-app.listen(PORT, () => console.log(`SchoolPay server running on port ${PORT}`))
+async function runMigrations() {
+  const { pool } = await import('./db/index.js')
+  const sql = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8')
+  await pool.query(sql)
+  console.log('Database schema ready')
+}
+
+app.listen(PORT, () => {
+  ;(async () => {
+    try {
+      await runMigrations()
+      console.log(`SchoolPay server running on port ${PORT}`)
+    } catch (err) {
+      console.error('FATAL: Startup failed:', err.message)
+      process.exit(1)
+    }
+  })()
+})
