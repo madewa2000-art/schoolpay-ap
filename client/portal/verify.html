@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verifying Payment — SchoolPay</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="sp-portal-page">
+    <nav class="sp-portal-nav">
+      <div class="sp-portal-nav-brand">
+        <span class="sp-portal-school-name" id="sp-portal-school-name">SchoolPay</span>
+      </div>
+    </nav>
+
+    <div class="sp-portal-body">
+      <div class="sp-payment-card" style="max-width:480px;margin:40px auto">
+
+        <!-- Checking state -->
+        <div id="state-checking" style="text-align:center;padding:40px 20px">
+          <div class="sp-spinner dark" style="width:32px;height:32px;margin:0 auto 16px"></div>
+          <h2 style="color:var(--black);margin-bottom:8px">Verifying your payment…</h2>
+          <p style="color:var(--muted);font-size:13px">Please wait while we confirm your transaction.</p>
+        </div>
+
+        <!-- Success state -->
+        <div id="state-success" style="display:none;text-align:center;padding:20px 0">
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--success);margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <h2 style="color:var(--black)">Payment Confirmed</h2>
+          <p style="color:var(--muted);margin-top:8px;font-size:13px">Your receipt has been emailed to you.</p>
+          <div class="sp-ref-box" id="success-receipt" style="margin:16px 0"></div>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap">
+            <a id="receipt-link" class="btn btn-primary" href="#" style="display:none">View Receipt</a>
+            <a id="portal-link" class="btn btn-outline" href="#">Back to Portal</a>
+          </div>
+        </div>
+
+        <!-- Pending state -->
+        <div id="state-pending" style="display:none;text-align:center;padding:20px 0">
+          <div style="font-size:36px;margin-bottom:16px">⏳</div>
+          <h2 style="color:var(--black)">Payment Processing</h2>
+          <p style="color:var(--muted);margin-top:8px;font-size:13px;max-width:300px;margin-left:auto;margin-right:auto">
+            Your payment was received but confirmation is still processing.
+            Your receipt will be emailed once confirmed — usually within a minute.
+          </p>
+          <a id="pending-portal-link" class="btn btn-outline" href="#" style="margin-top:20px;display:inline-block">Back to Portal</a>
+        </div>
+
+        <!-- Error state -->
+        <div id="state-error" style="display:none;text-align:center;padding:20px 0">
+          <div style="font-size:36px;margin-bottom:16px">❌</div>
+          <h2 style="color:var(--black)">Verification Failed</h2>
+          <p id="error-message" style="color:var(--muted);margin-top:8px;font-size:13px"></p>
+          <a id="error-portal-link" class="btn btn-outline" href="#" style="margin-top:20px;display:inline-block">Back to Portal</a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/main.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search)
+    const slug   = params.get('school')
+    const ref    = params.get('ref')
+
+    const portalUrl = slug ? `/portal/index.html?school=${encodeURIComponent(slug)}` : '/portal/index.html'
+
+    function show(stateId) {
+      ['state-checking','state-success','state-pending','state-error'].forEach(id => {
+        document.getElementById(id).style.display = id === stateId ? 'block' : 'none'
+      })
+    }
+
+    async function verify() {
+      if (!slug || !ref) {
+        document.getElementById('error-message').textContent = 'Invalid verification link. Please return to the portal.'
+        document.getElementById('error-portal-link').href = portalUrl
+        show('state-error')
+        return
+      }
+
+      document.getElementById('sp-portal-school-name').textContent = slug
+      document.querySelectorAll('#portal-link,#pending-portal-link,#error-portal-link').forEach(a => a.href = portalUrl)
+
+      // Poll up to 8 times (16 seconds) to give the webhook time to fire
+      let attempts = 0
+      const MAX = 8
+
+      const check = async () => {
+        attempts++
+        try {
+          const res  = await fetch(`/api/s/${encodeURIComponent(slug)}/payments/verify?ref=${encodeURIComponent(ref)}`)
+          const data = await res.json()
+
+          if (!res.ok) {
+            document.getElementById('error-message').textContent = data.error || 'Could not verify payment.'
+            document.getElementById('error-portal-link').href = portalUrl
+            show('state-error')
+            return
+          }
+
+          if (data.status === 'confirmed') {
+            document.getElementById('success-receipt').textContent = data.receipt_number || 'Receipt processing…'
+            if (data.receipt_number) {
+              const link = document.getElementById('receipt-link')
+              link.href = `/portal/receipt.html?school=${encodeURIComponent(slug)}&receipt=${encodeURIComponent(data.receipt_number)}`
+              link.style.display = 'inline-flex'
+            }
+            show('state-success')
+            return
+          }
+
+          // Still pending — retry if attempts remain
+          if (attempts < MAX) {
+            setTimeout(check, 2000)
+          } else {
+            show('state-pending')
+          }
+        } catch {
+          if (attempts < MAX) {
+            setTimeout(check, 2000)
+          } else {
+            document.getElementById('error-message').textContent = 'Network error. Please check your payment history or contact support.'
+            document.getElementById('error-portal-link').href = portalUrl
+            show('state-error')
+          }
+        }
+      }
+
+      check()
+    }
+
+    verify()
+  </script>
+</body>
+</html>

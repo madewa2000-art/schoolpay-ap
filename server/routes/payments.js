@@ -3,12 +3,25 @@ import bcrypt           from 'bcryptjs'
 import { pool }         from '../db/index.js'
 import { attachSchool } from '../middleware/school.js'
 import { verifyToken, requireRole } from '../middleware/auth.js'
-import { generateReference }        from '../utils/reference.js'
+import { generateReference, generateReceiptNumber } from '../utils/reference.js'
 import { initializeTransaction, refundTransaction } from '../utils/paystack.js'
-import { generateReceiptNumber }    from '../utils/reference.js'
 import { sendReceiptEmail }         from '../utils/mailer.js'
 
 const router = Router({ mergeParams: true })
+
+// Converts a DB NUMERIC naira amount to a kobo integer without float precision loss.
+function toKobo(nairaAmount) {
+  return parseInt(Number(nairaAmount).toFixed(2).replace('.', ''), 10)
+}
+
+// Escapes a CSV field value: doubles embedded quotes and prefixes formula characters
+// to prevent CSV injection when the file is opened in Excel or Google Sheets.
+function csvEscape(value) {
+  if (value === null || value === undefined) return '""'
+  const str     = String(value).replace(/"/g, '""')
+  const safe    = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str
+  return `"${safe}"`
+}
 
 // ─── Public: get school info + active fee types (for student payment form) ───
 router.get('/public', attachSchool, async (req, res, next) => {
@@ -57,18 +70,24 @@ router.post('/payments/initiate', attachSchool, async (req, res, next) => {
 
     const fee = feeRes.rows[0]
 
-    // Get next sequence for this school
-    const seqRes = await pool.query(
-      'SELECT COUNT(*) AS cnt FROM payments WHERE school_id = $1',
-      [req.school.id]
+    // Idempotency: prevent duplicate charges for the same student + fee
+    const dupCheck = await pool.query(
+      `SELECT id, reference FROM payments
+       WHERE school_id = $1 AND student_id = $2 AND payment_type_id = $3 AND status = 'pending'
+       LIMIT 1`,
+      [req.school.id, student_id, payment_type_id]
     )
-    const sequence = Number(seqRes.rows[0].cnt) + 1
+    if (dupCheck.rows.length) {
+      return res.status(409).json({
+        error: 'A pending payment already exists for this student and fee type.',
+        existing_reference: dupCheck.rows[0].reference,
+      })
+    }
 
     const reference = generateReference({
       slug:            req.school.slug,
       schoolType:      req.school.type,
       paymentTypeName: fee.name,
-      sequence,
     })
 
     const { rows } = await pool.query(
@@ -89,9 +108,9 @@ router.post('/payments/initiate', attachSchool, async (req, res, next) => {
       const paystackData = await initializeTransaction({
         secretKey:   req.school.paystack_secret_key,
         email:       student_email,
-        amountKobo:  Math.round(fee.amount * 100),
+        amountKobo:  toKobo(fee.amount),
         reference,
-        callbackUrl: `${process.env.CLIENT_URL}/s/${req.school.slug}/portal/verify?ref=${reference}`,
+        callbackUrl: `${process.env.CLIENT_URL}/portal/verify.html?school=${req.school.slug}&ref=${reference}`,
         metadata:    { student_id, student_name, school: req.school.name },
       })
       return res.json({ payment, paystack: paystackData })
@@ -193,30 +212,31 @@ router.patch('/admin/payments/:paymentId/confirm', attachSchool, verifyToken,
     const payment = payRes.rows[0]
     if (payment.status === 'confirmed') return res.json({ message: 'Already confirmed', payment })
 
-    await pool.query(
-      `UPDATE payments SET status = 'confirmed', confirmed_at = NOW(), confirmed_by = $1
-       WHERE id = $2`,
-      [req.user.id, paymentId]
-    )
+    const receiptNumber = generateReceiptNumber({ slug: req.school.slug })
+    const client = await pool.connect()
+    let rcptRes
+    try {
+      await client.query('BEGIN')
+      await client.query(
+        `UPDATE payments SET status = 'confirmed', confirmed_at = NOW(), confirmed_by = $1
+         WHERE id = $2`,
+        [req.user.id, paymentId]
+      )
+      rcptRes = await client.query(
+        `INSERT INTO receipts (school_id, payment_id, receipt_number)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (payment_id) DO NOTHING
+         RETURNING *`,
+        [req.school.id, paymentId, receiptNumber]
+      )
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
 
-    // Auto-generate receipt
-    const seqRes = await pool.query(
-      'SELECT COUNT(*) AS cnt FROM receipts WHERE school_id = $1',
-      [req.school.id]
-    )
-    const receiptNumber = generateReceiptNumber({
-      slug:     req.school.slug,
-      sequence: Number(seqRes.rows[0].cnt) + 1,
-    })
-    const rcptRes = await pool.query(
-      `INSERT INTO receipts (school_id, payment_id, receipt_number)
-       VALUES ($1,$2,$3)
-       ON CONFLICT (payment_id) DO NOTHING
-       RETURNING *`,
-      [req.school.id, paymentId, receiptNumber]
-    )
-
-    // Send receipt email (non-blocking)
     if (rcptRes.rows.length) {
       sendReceiptEmail({ school: req.school, payment, receipt: rcptRes.rows[0] }).catch(console.error)
     }
@@ -252,16 +272,28 @@ router.post('/admin/payments/:paymentId/refund', attachSchool, verifyToken,
       transactionId: payment.paystack_ref,
     })
 
-    await pool.query(
-      `UPDATE payments SET status = 'refunded' WHERE id = $1`,
-      [paymentId]
-    )
-
-    await pool.query(
-      `UPDATE receipts SET voided = true, voided_at = NOW(), voided_by = $1
-       WHERE payment_id = $2`,
-      [req.user.id, paymentId]
-    )
+    // Paystack accepted the refund — now mark both records atomically.
+    // If this transaction fails, the refund is still in flight on Paystack's side;
+    // an operator can reconcile via the Paystack dashboard.
+    const refundClient = await pool.connect()
+    try {
+      await refundClient.query('BEGIN')
+      await refundClient.query(
+        `UPDATE payments SET status = 'refunded' WHERE id = $1`,
+        [paymentId]
+      )
+      await refundClient.query(
+        `UPDATE receipts SET voided = true, voided_at = NOW(), voided_by = $1
+         WHERE payment_id = $2`,
+        [req.user.id, paymentId]
+      )
+      await refundClient.query('COMMIT')
+    } catch (err) {
+      await refundClient.query('ROLLBACK')
+      throw err
+    } finally {
+      refundClient.release()
+    }
 
     res.json({ message: 'Refund submitted to Paystack. Student will be refunded within 5–10 business days.' })
   } catch (err) {
@@ -421,7 +453,7 @@ router.get('/admin/payments/export', attachSchool, verifyToken,
     const csv    = rows.map(r =>
       [r.student_id, r.student_name, r.student_email, r.student_class || '',
        r.fee_type, r.reference, r.amount, r.method,
-       r.confirmed_at, r.receipt_number || ''].map(v => `"${v}"`).join(',')
+       r.confirmed_at, r.receipt_number || ''].map(csvEscape).join(',')
     ).join('\n')
 
     res.setHeader('Content-Type', 'text/csv')

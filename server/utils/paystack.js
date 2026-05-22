@@ -1,15 +1,6 @@
-import crypto from 'crypto'
-import axios  from 'axios'
+import axios from 'axios'
 
 const BASE = 'https://api.paystack.co'
-
-export function verifySignature(body, signature, secretKey) {
-  const hash = crypto
-    .createHmac('sha512', secretKey)
-    .update(JSON.stringify(body))
-    .digest('hex')
-  return hash === signature
-}
 
 export async function initializeTransaction({ secretKey, email, amountKobo, reference, callbackUrl, metadata }) {
   const res = await axios.post(

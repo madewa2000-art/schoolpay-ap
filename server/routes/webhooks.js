@@ -1,30 +1,35 @@
 import { Router }  from 'express'
+import crypto      from 'crypto'
 import { pool }    from '../db/index.js'
-import { verifySignature } from '../utils/paystack.js'
 import { generateReceiptNumber } from '../utils/reference.js'
 import { sendReceiptEmail }      from '../utils/mailer.js'
 
 const router = Router()
 
+// Converts a DB NUMERIC naira amount to a kobo integer without float precision loss.
+function toKobo(nairaAmount) {
+  return parseInt(Number(nairaAmount).toFixed(2).replace('.', ''), 10)
+}
+
 // POST /api/webhooks/paystack
-// Paystack sends raw JSON body; we verify the HMAC before trusting it
+// req.body is a raw Buffer because express.raw() is mounted on this path in index.js
 router.post('/paystack', async (req, res) => {
   const signature = req.headers['x-paystack-signature']
+  const rawBody   = req.body  // Buffer
 
-  // req.body is a Buffer (raw) because of express.raw() on this path
+  // 1. Parse body
   let event
   try {
-    event = JSON.parse(req.body)
+    event = JSON.parse(rawBody)
   } catch {
     return res.status(400).send('Bad JSON')
   }
 
   if (event.event !== 'charge.success') return res.sendStatus(200)
-
   const { reference, amount, status } = event.data
   if (status !== 'success') return res.sendStatus(200)
 
-  // Look up the payment by reference to get the school's secret key for verification
+  // 2. Look up payment to get the school's Paystack secret key for HMAC verification
   const payRes = await pool.query(
     `SELECT p.*, s.paystack_secret_key, s.name AS school_name,
             s.slug, s.type AS school_type,
@@ -45,48 +50,57 @@ router.post('/paystack', async (req, res) => {
     paystack_secret_key: row.paystack_secret_key,
   }
 
-  // Verify HMAC with this school's own Paystack secret
-  if (!verifySignature(event, signature, school.paystack_secret_key)) {
-    return res.status(401).send('Signature mismatch')
-  }
+  // 3. Verify HMAC against the raw body bytes — NOT re-serialised JSON.
+  //    JSON.stringify(parsedObject) can produce a different byte sequence than
+  //    the original payload (key ordering, whitespace), breaking the HMAC check.
+  const hash = crypto
+    .createHmac('sha512', school.paystack_secret_key)
+    .update(rawBody)
+    .digest('hex')
+  if (hash !== signature) return res.status(401).send('Signature mismatch')
 
   if (row.status === 'confirmed') return res.sendStatus(200)
 
-  // Verify amount matches (Paystack amount is in kobo)
-  const expectedKobo = Math.round(Number(row.amount) * 100)
+  // 4. Verify amount — blocks replayed or tampered webhooks
+  const expectedKobo = toKobo(row.amount)
   if (Number(amount) !== expectedKobo) {
-    console.warn(`Amount mismatch for ${reference}: expected ${expectedKobo}, got ${amount}`)
+    console.error(`PAYMENT_AMOUNT_MISMATCH reference=${reference} expected=${expectedKobo} got=${amount}`)
     return res.sendStatus(200)
   }
 
-  // Confirm payment
-  await pool.query(
-    `UPDATE payments
-     SET status = 'confirmed', paystack_ref = $1, confirmed_at = NOW()
-     WHERE id = $2`,
-    [event.data.id, row.id]
-  )
-
-  // Generate receipt
-  const seqRes = await pool.query(
-    'SELECT COUNT(*) AS cnt FROM receipts WHERE school_id = $1',
-    [row.school_id]
-  )
-  const receiptNumber = generateReceiptNumber({
-    slug:     school.slug,
-    sequence: Number(seqRes.rows[0].cnt) + 1,
-  })
-  const rcptRes = await pool.query(
-    `INSERT INTO receipts (school_id, payment_id, receipt_number)
-     VALUES ($1,$2,$3) ON CONFLICT (payment_id) DO NOTHING RETURNING *`,
-    [row.school_id, row.id, receiptNumber]
-  )
-
-  if (rcptRes.rows.length) {
-    sendReceiptEmail({ school, payment: row, receipt: rcptRes.rows[0] }).catch(console.error)
-  }
-
+  // 5. All validation passed — acknowledge to Paystack immediately
   res.sendStatus(200)
+
+  // 6. Confirm payment and generate receipt atomically
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    await client.query(
+      `UPDATE payments
+       SET status = 'confirmed', paystack_ref = $1, confirmed_at = NOW()
+       WHERE id = $2 AND status != 'confirmed'`,
+      [event.data.id, row.id]
+    )
+
+    const receiptNumber = generateReceiptNumber({ slug: school.slug })
+    const rcptRes = await client.query(
+      `INSERT INTO receipts (school_id, payment_id, receipt_number)
+       VALUES ($1,$2,$3) ON CONFLICT (payment_id) DO NOTHING RETURNING *`,
+      [row.school_id, row.id, receiptNumber]
+    )
+
+    await client.query('COMMIT')
+
+    if (rcptRes.rows.length) {
+      sendReceiptEmail({ school, payment: row, receipt: rcptRes.rows[0] }).catch(console.error)
+    }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    console.error('Webhook processing failed:', { reference, error: err.message })
+  } finally {
+    client.release()
+  }
 })
 
 export default router

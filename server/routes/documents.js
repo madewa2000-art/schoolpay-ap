@@ -75,41 +75,49 @@ router.patch('/admin/documents/:docId/review', attachSchool, verifyToken,
     if (!docRes.rows.length) return res.status(404).json({ error: 'Document not found' })
     const doc = docRes.rows[0]
 
-    await pool.query(
-      `UPDATE bank_documents
-       SET review_status = $1, reviewed_by = $2, review_note = $3, reviewed_at = NOW()
-       WHERE id = $4`,
-      [action === 'approve' ? 'approved' : 'rejected', req.user.id, note || null, doc.id]
-    )
+    const reviewStatus = action === 'approve' ? 'approved' : 'rejected'
+    const client = await pool.connect()
+    let emailArgs = null
+    try {
+      await client.query('BEGIN')
 
-    if (action === 'approve') {
-      const payRes = await pool.query(
-        `UPDATE payments SET status = 'confirmed', confirmed_at = NOW(), confirmed_by = $1
-         WHERE id = $2 AND status != 'confirmed' RETURNING *`,
-        [req.user.id, doc.payment_id]
+      await client.query(
+        `UPDATE bank_documents
+         SET review_status = $1, reviewed_by = $2, review_note = $3, reviewed_at = NOW()
+         WHERE id = $4`,
+        [reviewStatus, req.user.id, note || null, doc.id]
       )
 
-      if (payRes.rows.length) {
-        const payment = payRes.rows[0]
+      if (action === 'approve') {
+        const payRes = await client.query(
+          `UPDATE payments SET status = 'confirmed', confirmed_at = NOW(), confirmed_by = $1
+           WHERE id = $2 AND status != 'confirmed' RETURNING *`,
+          [req.user.id, doc.payment_id]
+        )
 
-        const seqRes = await pool.query(
-          'SELECT COUNT(*) AS cnt FROM receipts WHERE school_id = $1',
-          [req.school.id]
-        )
-        const receiptNumber = generateReceiptNumber({
-          slug:     req.school.slug,
-          sequence: Number(seqRes.rows[0].cnt) + 1,
-        })
-        const rcptRes = await pool.query(
-          `INSERT INTO receipts (school_id, payment_id, receipt_number)
-           VALUES ($1,$2,$3) ON CONFLICT (payment_id) DO NOTHING RETURNING *`,
-          [req.school.id, payment.id, receiptNumber]
-        )
-        if (rcptRes.rows.length) {
-          sendReceiptEmail({ school: req.school, payment, receipt: rcptRes.rows[0] }).catch(console.error)
+        if (payRes.rows.length) {
+          const payment = payRes.rows[0]
+          const receiptNumber = generateReceiptNumber({ slug: req.school.slug })
+          const rcptRes = await client.query(
+            `INSERT INTO receipts (school_id, payment_id, receipt_number)
+             VALUES ($1,$2,$3) ON CONFLICT (payment_id) DO NOTHING RETURNING *`,
+            [req.school.id, payment.id, receiptNumber]
+          )
+          if (rcptRes.rows.length) {
+            emailArgs = { school: req.school, payment, receipt: rcptRes.rows[0] }
+          }
         }
       }
+
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
     }
+
+    if (emailArgs) sendReceiptEmail(emailArgs).catch(console.error)
 
     res.json({ message: `Document ${action}d` })
   } catch (err) { next(err) }
