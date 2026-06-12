@@ -18,8 +18,8 @@ import webhookRoutes    from './routes/webhooks.js'
 dotenv.config()
 
 // ─── Startup safety guards ────────────────────────────────────────────────────
-if (!process.env.DATABASE_URL) {
-  console.error('FATAL: DATABASE_URL is not set. Add a PostgreSQL database and link it to this service on Railway.')
+if (!process.env.DATABASE_URL && !process.env.DB_PASSWORD) {
+  console.error('FATAL: No database configured. Set DATABASE_URL (production/Railway) or DB_PASSWORD (local dev) in .env')
   process.exit(1)
 }
 const DEV_JWT = 'dev-secret-change-in-production-schoolpay-2026'
