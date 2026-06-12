@@ -45,6 +45,7 @@ app.use(helmet({
       // 'unsafe-inline' is required because the HTML pages use inline <script> tags.
       // External scripts: Paystack popup + jsPDF from CDN.
       scriptSrc:      ["'self'", "'unsafe-inline'", 'https://js.paystack.co', 'https://cdnjs.cloudflare.com'],
+      scriptSrcAttr:  ["'unsafe-inline'"],
       styleSrc:       ["'self'", "'unsafe-inline'"],
       imgSrc:         ["'self'", 'data:', 'https://res.cloudinary.com'],
       // Paystack popup opens as an iframe from checkout.paystack.com
