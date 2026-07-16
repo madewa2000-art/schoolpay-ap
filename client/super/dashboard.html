@@ -133,6 +133,85 @@
     </div>
   </div>
 
+  <!-- Edit School Modal -->
+  <div class="sp-modal-overlay hidden" id="edit-modal">
+    <div class="sp-modal" style="max-width:640px">
+      <div class="sp-modal-header">
+        <span class="sp-modal-title">Edit School — <span id="e-school-name"></span></span>
+        <button class="sp-modal-close" onclick="closeEditModal()">x</button>
+      </div>
+      <div class="sp-modal-body">
+        <form id="edit-form">
+          <div class="sp-form-group">
+            <label class="sp-label">School Name</label>
+            <input class="sp-input" id="e-name" />
+          </div>
+
+          <p style="font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.04em">Bank Details</p>
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">Bank Name</label>
+              <input class="sp-input" id="e-bank-name" />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Account Number</label>
+              <input class="sp-input" id="e-bank-account" />
+            </div>
+          </div>
+          <div class="sp-form-group">
+            <label class="sp-label">Account Name</label>
+            <input class="sp-input" id="e-bank-account-name" />
+          </div>
+
+          <p style="font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.04em">Paystack Keys</p>
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">Public Key</label>
+              <input class="sp-input" id="e-ps-pub" placeholder="pk_live_..." />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">Secret Key</label>
+              <input class="sp-input" id="e-ps-sec" type="password" />
+              <small class="sp-input-hint" id="e-ps-sec-hint"></small>
+            </div>
+          </div>
+
+          <p style="font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.04em">Receipt Email (optional)</p>
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">From Email</label>
+              <input class="sp-input" id="e-from-email" placeholder="fees@school.com" />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">SMTP Host</label>
+              <input class="sp-input" id="e-smtp-host" placeholder="smtp.gmail.com" />
+            </div>
+          </div>
+          <div class="sp-form-row">
+            <div class="sp-form-group">
+              <label class="sp-label">SMTP Port</label>
+              <input class="sp-input" id="e-smtp-port" type="number" placeholder="587" />
+            </div>
+            <div class="sp-form-group">
+              <label class="sp-label">SMTP User</label>
+              <input class="sp-input" id="e-smtp-user" />
+            </div>
+          </div>
+          <div class="sp-form-group">
+            <label class="sp-label">SMTP Password</label>
+            <input class="sp-input" id="e-smtp-pass" type="password" />
+            <small class="sp-input-hint" id="e-smtp-pass-hint"></small>
+          </div>
+          <div id="edit-error" style="color:var(--danger);font-size:13px;display:none;margin-bottom:10px"></div>
+        </form>
+      </div>
+      <div class="sp-modal-footer">
+        <button class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
+        <button class="btn btn-primary" id="edit-btn" onclick="submitEdit()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Suspend confirm modal -->
   <div class="sp-modal-overlay hidden" id="suspend-modal">
     <div class="sp-modal" style="max-width:400px">
@@ -191,7 +270,10 @@
           <td data-label="Created">${formatDate(s.created_at)}</td>
           <td data-label="">
             <a href="/portal/index.html?school=${esc(s.slug)}" target="_blank" class="btn btn-outline btn-sm">Portal</a>
-            ${s.active ? `<button class="btn btn-danger btn-sm" onclick="openSuspend('${esc(s.id)}','${esc(s.name)}')">Suspend</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick="openEditModal('${esc(s.id)}')">Edit</button>
+            ${s.active
+              ? `<button class="btn btn-danger btn-sm" onclick="openSuspend('${esc(s.id)}','${esc(s.name)}')">Suspend</button>`
+              : `<button class="btn btn-primary btn-sm" onclick="reactivate('${esc(s.id)}')">Reactivate</button>`}
           </td>
         </tr>`).join('')
     }
@@ -239,6 +321,80 @@
         errEl.style.display = 'block'
         btnLoading(btn, false, 'Create School')
       }
+    }
+
+    // ── Edit school ──
+    let editTarget = null
+
+    async function openEditModal(id) {
+      try {
+        const s = await apiFetch(`/schools/${id}`)
+        editTarget = id
+        document.getElementById('e-school-name').textContent    = s.name
+        document.getElementById('e-name').value                 = s.name || ''
+        document.getElementById('e-bank-name').value            = s.bank_name || ''
+        document.getElementById('e-bank-account').value         = s.bank_account || ''
+        document.getElementById('e-bank-account-name').value    = s.bank_account_name || ''
+        document.getElementById('e-ps-pub').value               = s.paystack_public_key || ''
+        document.getElementById('e-ps-sec').value               = ''
+        document.getElementById('e-ps-sec-hint').textContent    = s.has_paystack_secret_key
+          ? 'A secret key is saved. Leave blank to keep it, or paste a new one to replace it.'
+          : 'No secret key saved yet.'
+        document.getElementById('e-from-email').value           = s.from_email || ''
+        document.getElementById('e-smtp-host').value            = s.smtp_host || ''
+        document.getElementById('e-smtp-port').value            = s.smtp_port || ''
+        document.getElementById('e-smtp-user').value            = s.smtp_user || ''
+        document.getElementById('e-smtp-pass').value            = ''
+        document.getElementById('e-smtp-pass-hint').textContent = s.has_smtp_pass
+          ? 'A password is saved. Leave blank to keep it.'
+          : ''
+        document.getElementById('edit-error').style.display = 'none'
+        document.getElementById('edit-modal').classList.remove('hidden')
+      } catch (err) { toast(err.message, 'error') }
+    }
+
+    function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden') }
+
+    async function submitEdit() {
+      const btn = document.getElementById('edit-btn')
+      const errEl = document.getElementById('edit-error')
+      errEl.style.display = 'none'
+      btnLoading(btn, true)
+      const body = {
+        name:              document.getElementById('e-name').value.trim(),
+        bank_name:         document.getElementById('e-bank-name').value.trim(),
+        bank_account:      document.getElementById('e-bank-account').value.trim(),
+        bank_account_name: document.getElementById('e-bank-account-name').value.trim(),
+        paystack_public_key: document.getElementById('e-ps-pub').value.trim(),
+        from_email:        document.getElementById('e-from-email').value.trim(),
+        smtp_host:         document.getElementById('e-smtp-host').value.trim(),
+        smtp_port:         document.getElementById('e-smtp-port').value ? Number(document.getElementById('e-smtp-port').value) : 587,
+        smtp_user:         document.getElementById('e-smtp-user').value.trim(),
+      }
+      // Secrets only sent when a new value is typed — blank keeps the saved one
+      const sec  = document.getElementById('e-ps-sec').value.trim()
+      const pass = document.getElementById('e-smtp-pass').value
+      if (sec)  body.paystack_secret_key = sec
+      if (pass) body.smtp_pass = pass
+      try {
+        await apiFetch(`/schools/${editTarget}`, { method: 'PATCH', body: JSON.stringify(body) })
+        toast('School updated', 'success')
+        closeEditModal()
+        init()
+      } catch (err) {
+        errEl.textContent = err.message
+        errEl.style.display = 'block'
+      } finally {
+        btnLoading(btn, false, 'Save Changes')
+      }
+    }
+
+    async function reactivate(id) {
+      try {
+        await apiFetch(`/schools/${id}`, { method: 'PATCH', body: JSON.stringify({ active: true }) })
+        toast('School reactivated', 'success')
+        init()
+      } catch (err) { toast(err.message, 'error') }
     }
 
     function openSuspend(id, name) {

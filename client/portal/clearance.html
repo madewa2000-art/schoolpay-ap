@@ -1,176 +1,317 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clearance — SchoolPay</title>
-  <link rel="stylesheet" href="../css/style.css" />
-</head>
-<body>
-  <div class="sp-portal-page">
-    <nav class="sp-portal-nav">
-      <div class="sp-portal-nav-brand">
-        <span class="sp-portal-school-name" id="sp-portal-school-name">SchoolPay</span>
-      </div>
-      <div class="sp-portal-nav-links" id="sp-portal-nav-links"></div>
-    </nav>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clearance — SchoolPay</title>
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+  <body>
+    <div class="sp-portal-page">
+      <nav class="sp-portal-nav">
+        <div class="sp-portal-nav-brand">
+          <span class="sp-portal-school-name" id="sp-portal-school-name"
+            >SchoolPay</span
+          >
+        </div>
+        <div class="sp-portal-nav-links" id="sp-portal-nav-links"></div>
+      </nav>
 
-    <div class="sp-portal-body" style="max-width:720px">
-      <div class="sp-portal-header">
-        <h1>Fees Clearance</h1>
-        <p>Check if all mandatory fees are paid and generate your clearance certificate</p>
-      </div>
-
-      <div class="sp-payment-card">
-        <div id="check-form">
-          <div class="sp-form-row">
-            <div class="sp-form-group">
-              <label class="sp-label" for="student-id">Student ID *</label>
-              <input class="sp-input" id="student-id" placeholder="e.g. STU/2024/001" required />
-            </div>
-            <div class="sp-form-group">
-              <label class="sp-label" for="student-email">Email Address *</label>
-              <input class="sp-input" type="email" id="student-email" placeholder="your@email.com" required />
-            </div>
-          </div>
-          <div class="sp-form-row">
-            <div class="sp-form-group">
-              <label class="sp-label">Academic Year</label>
-              <input class="sp-input" id="academic-year" placeholder="e.g. 2025/2026" />
-            </div>
-            <div class="sp-form-group">
-              <label class="sp-label">Term / Semester</label>
-              <input class="sp-input" id="term" placeholder="e.g. First Term" />
-            </div>
-          </div>
-          <div id="check-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
-          <button class="btn btn-primary" id="check-btn" onclick="checkClearance()">Check Clearance Status</button>
+      <div class="sp-portal-body" style="max-width: 720px">
+        <div class="sp-portal-header">
+          <h1>Fees Clearance</h1>
+          <p>
+            Check if all mandatory fees are paid and generate your clearance
+            certificate
+          </p>
         </div>
 
-        <div id="clearance-result" style="display:none;margin-top:28px">
-          <!-- Status banner -->
-          <div id="status-banner" style="padding:16px 20px;border-radius:var(--radius);margin-bottom:20px;text-align:center;font-weight:700;font-size:16px"></div>
-
-          <!-- Printable area -->
-          <div id="clearance-printable" style="background:white;border:1px solid #E4E4E4;border-radius:6px;padding:32px">
-            <div style="text-align:center;border-bottom:2px solid #0F0F0F;padding-bottom:16px;margin-bottom:20px">
-              <h2 style="color:#0F0F0F;margin:0;font-size:18px;font-weight:800" id="c-school-name"></h2>
-              <h3 style="margin:6px 0 0;font-size:15px">SCHOOL FEES CLEARANCE CERTIFICATE</h3>
-              <p style="font-size:12px;color:#888;margin:4px 0 0" id="c-generated"></p>
+        <div class="sp-payment-card">
+          <div id="check-form">
+            <div class="sp-form-row">
+              <div class="sp-form-group">
+                <label class="sp-label" for="student-id">Student ID *</label>
+                <input
+                  class="sp-input"
+                  id="student-id"
+                  placeholder="e.g. STU/2024/001"
+                  required
+                />
+              </div>
+              <div class="sp-form-group">
+                <label class="sp-label" for="student-email"
+                  >Email Address *</label
+                >
+                <input
+                  class="sp-input"
+                  type="email"
+                  id="student-email"
+                  placeholder="your@email.com"
+                  required
+                />
+              </div>
             </div>
-            <p style="margin-bottom:4px"><strong>Student ID:</strong> <span id="c-student-id"></span></p>
-
-            <div class="sp-table-wrap" style="margin-top:16px">
-              <table class="sp-table" id="c-table">
-                <thead>
-                  <tr>
-                    <th>Fee Type</th><th>Amount</th><th>Status</th><th>Receipt No.</th>
-                  </tr>
-                </thead>
-                <tbody id="c-tbody"></tbody>
-              </table>
+            <div class="sp-form-row">
+              <div class="sp-form-group">
+                <label class="sp-label">Academic Year</label>
+                <input
+                  class="sp-input"
+                  id="academic-year"
+                  placeholder="e.g. 2025/2026"
+                />
+              </div>
+              <div class="sp-form-group">
+                <label class="sp-label">Term / Semester</label>
+                <input
+                  class="sp-input"
+                  id="term"
+                  placeholder="e.g. First Term"
+                />
+              </div>
             </div>
-
-            <div style="margin-top:40px;display:flex;justify-content:space-between">
-              <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:8px;width:180px;font-size:12px;color:#555">Bursar's Signature</div></div>
-              <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:8px;width:180px;font-size:12px;color:#555">School Stamp</div></div>
-            </div>
+            <div
+              id="check-error"
+              style="
+                color: var(--danger);
+                font-size: 13px;
+                margin-bottom: 12px;
+                display: none;
+              "
+            ></div>
+            <button
+              class="btn btn-primary"
+              id="check-btn"
+              onclick="checkClearance()"
+            >
+              Check Clearance Status
+            </button>
           </div>
 
-          <div class="sp-receipt-actions" style="margin-top:16px">
-            <button class="btn btn-primary" onclick="window.print()">Print</button>
-            <button class="btn btn-outline" onclick="doDownloadPdf()">Download PDF</button>
-            <button class="btn btn-outline" onclick="resetCheck()">Check Another</button>
+          <div id="clearance-result" style="display: none; margin-top: 28px">
+            <!-- Status banner -->
+            <div
+              id="status-banner"
+              style="
+                padding: 16px 20px;
+                border-radius: var(--radius);
+                margin-bottom: 20px;
+                text-align: center;
+                font-weight: 700;
+                font-size: 16px;
+              "
+            ></div>
+
+            <!-- Printable area -->
+            <div
+              id="clearance-printable"
+              style="
+                background: white;
+                border: 1px solid #e4e4e4;
+                border-radius: 6px;
+                padding: 32px;
+              "
+            >
+              <div
+                style="
+                  text-align: center;
+                  border-bottom: 2px solid #0f0f0f;
+                  padding-bottom: 16px;
+                  margin-bottom: 20px;
+                "
+              >
+                <h2
+                  style="
+                    color: #0f0f0f;
+                    margin: 0;
+                    font-size: 18px;
+                    font-weight: 800;
+                  "
+                  id="c-school-name"
+                ></h2>
+                <h3 style="margin: 6px 0 0; font-size: 15px">
+                  SCHOOL FEES CLEARANCE CERTIFICATE
+                </h3>
+                <p
+                  style="font-size: 12px; color: #888; margin: 4px 0 0"
+                  id="c-generated"
+                ></p>
+              </div>
+              <p style="margin-bottom: 4px">
+                <strong>Student ID:</strong> <span id="c-student-id"></span>
+              </p>
+
+              <div class="sp-table-wrap" style="margin-top: 16px">
+                <table class="sp-table" id="c-table">
+                  <thead>
+                    <tr>
+                      <th>Fee Type</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Receipt No.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="c-tbody"></tbody>
+                </table>
+              </div>
+
+              <div
+                style="
+                  margin-top: 40px;
+                  display: flex;
+                  justify-content: space-between;
+                "
+              >
+                <div style="text-align: center">
+                  <div
+                    style="
+                      border-top: 1px solid #333;
+                      padding-top: 8px;
+                      width: 180px;
+                      font-size: 12px;
+                      color: #555;
+                    "
+                  >
+                    Bursar's Signature
+                  </div>
+                </div>
+                <div style="text-align: center">
+                  <div
+                    style="
+                      border-top: 1px solid #333;
+                      padding-top: 8px;
+                      width: 180px;
+                      font-size: 12px;
+                      color: #555;
+                    "
+                  >
+                    School Stamp
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sp-receipt-actions" style="margin-top: 16px">
+              <button class="btn btn-primary" onclick="window.print()">
+                Print
+              </button>
+              <button class="btn btn-outline" onclick="doDownloadPdf()">
+                Download PDF
+              </button>
+              <button class="btn btn-outline" onclick="resetCheck()">
+                Check Another
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <div id="sp-toast-container"></div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="../js/api.js"></script>
-  <script src="../js/auth.js"></script>
-  <script src="../js/main.js"></script>
-  <script src="../js/pdf.js"></script>
-  <script>
-    let clearanceData = null
+    <div id="sp-toast-container"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/main.js"></script>
+    <script src="../js/pdf.js"></script>
+    <script>
+      let clearanceData = null;
 
-    async function init() {
-      const slug = getPortalSlug()
-      if (!slug) return
-      try {
-        const d = await apiFetch(`/s/${slug}/public`)
-        initPortalNav(d.school, 'clearance')
-      } catch {}
-    }
-
-    async function checkClearance() {
-      const slug  = getPortalSlug()
-      const id    = document.getElementById('student-id').value.trim()
-      const email = document.getElementById('student-email').value.trim()
-      const year  = document.getElementById('academic-year').value.trim()
-      const term  = document.getElementById('term').value.trim()
-      const errEl = document.getElementById('check-error')
-      const btn   = document.getElementById('check-btn')
-      errEl.style.display = 'none'
-      if (!id || !email) { errEl.textContent = 'Student ID and email are required'; errEl.style.display = 'block'; return }
-      btnLoading(btn, true)
-      try {
-        const params = new URLSearchParams({ student_id: id, student_email: email })
-        if (year) params.set('academic_year', year)
-        if (term) params.set('term', term)
-        clearanceData = await apiFetch(`/s/${slug}/clearance?${params}`)
-        renderClearance(clearanceData)
-        document.getElementById('clearance-result').style.display = 'block'
-        document.getElementById('clearance-result').scrollIntoView({ behavior: 'smooth' })
-      } catch (err) {
-        errEl.textContent = err.message
-        errEl.style.display = 'block'
+      async function init() {
+        const slug = getPortalSlug();
+        if (!slug) return;
+        try {
+          const d = await apiFetch(`/s/${slug}/public`);
+          initPortalNav(d.school, "clearance");
+        } catch {}
       }
-      btnLoading(btn, false, 'Check Clearance Status')
-    }
 
-    function renderClearance(data) {
-      const fmt  = (n) => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })
-      const banner = document.getElementById('status-banner')
-      if (data.is_cleared) {
-        banner.style.background = 'var(--success-light)'
-        banner.style.color      = 'var(--success)'
-        banner.style.border     = '2px solid var(--success)'
-        banner.textContent      = 'All mandatory fees are CLEARED'
-      } else {
-        banner.style.background = 'var(--danger-light)'
-        banner.style.color      = 'var(--danger)'
-        banner.style.border     = '2px solid var(--danger)'
-        banner.textContent      = 'Outstanding fees exist — not cleared'
+      async function checkClearance() {
+        const slug = getPortalSlug();
+        const id = document.getElementById("student-id").value.trim();
+        const email = document.getElementById("student-email").value.trim();
+        const year = document.getElementById("academic-year").value.trim();
+        const term = document.getElementById("term").value.trim();
+        const errEl = document.getElementById("check-error");
+        const btn = document.getElementById("check-btn");
+        errEl.style.display = "none";
+        if (!id || !email) {
+          errEl.textContent = "Student ID and email are required";
+          errEl.style.display = "block";
+          return;
+        }
+        btnLoading(btn, true);
+        try {
+          const params = new URLSearchParams({
+            student_id: id,
+            student_email: email,
+          });
+          if (year) params.set("academic_year", year);
+          if (term) params.set("term", term);
+          clearanceData = await apiFetch(`/s/${slug}/clearance?${params}`);
+          renderClearance(clearanceData);
+          document.getElementById("clearance-result").style.display = "block";
+          document
+            .getElementById("clearance-result")
+            .scrollIntoView({ behavior: "smooth" });
+        } catch (err) {
+          errEl.textContent = err.message;
+          errEl.style.display = "block";
+        }
+        btnLoading(btn, false, "Check Clearance Status");
       }
-      document.getElementById('c-school-name').textContent = data.school_name
-      document.getElementById('c-student-id').textContent  = data.student_id
-      document.getElementById('c-generated').textContent   = `Generated: ${new Date(data.generated_at).toLocaleString('en-NG')}`
-      document.getElementById('c-tbody').innerHTML = data.fee_breakdown.map(f => `
+
+      function renderClearance(data) {
+        const fmt = (n) =>
+          "₦" +
+          Number(n || 0).toLocaleString("en-NG", { minimumFractionDigits: 2 });
+        const banner = document.getElementById("status-banner");
+        if (data.is_cleared) {
+          banner.style.background = "var(--success-light)";
+          banner.style.color = "var(--success)";
+          banner.style.border = "2px solid var(--success)";
+          banner.textContent = "All mandatory fees are CLEARED";
+        } else {
+          banner.style.background = "var(--danger-light)";
+          banner.style.color = "var(--danger)";
+          banner.style.border = "2px solid var(--danger)";
+          banner.textContent = "Outstanding fees exist — not cleared";
+        }
+        document.getElementById("c-school-name").textContent = data.school_name;
+        document.getElementById("c-student-id").textContent = data.student_id;
+        document.getElementById("c-generated").textContent =
+          `Generated: ${new Date(data.generated_at).toLocaleString("en-NG")}`;
+        document.getElementById("c-tbody").innerHTML = data.fee_breakdown
+          .map(
+            (f) => `
         <tr>
           <td>${f.name}</td>
           <td>${fmt(f.amount)}</td>
-          <td style="color:${f.status === 'confirmed' ? 'var(--success)' : 'var(--danger)'};font-weight:700">
-            ${f.status === 'confirmed' ? 'Cleared' : 'Outstanding'}
+          <td style="color:${f.status === "confirmed" ? "var(--success)" : "var(--danger)"};font-weight:700">
+            ${f.status === "confirmed" ? "Cleared" : "Outstanding"}
           </td>
-          <td><code style="font-size:12px">${f.receipt_number || '—'}</code></td>
-        </tr>`).join('')
-    }
+          <td><code style="font-size:12px">${f.receipt_number || "—"}</code></td>
+        </tr>`,
+          )
+          .join("");
+      }
 
-    function resetCheck() {
-      clearanceData = null
-      document.getElementById('clearance-result').style.display = 'none'
-    }
+      function resetCheck() {
+        clearanceData = null;
+        document.getElementById("clearance-result").style.display = "none";
+      }
 
-    function doDownloadPdf() {
-      if (!clearanceData) return
-      try { printClearance(clearanceData) }
-      catch { toast('PDF generation failed. Use the Print button instead.', 'error') }
-    }
+      function doDownloadPdf() {
+        if (!clearanceData) return;
+        try {
+          printClearance(clearanceData);
+        } catch {
+          toast(
+            "PDF generation failed. Use the Print button instead.",
+            "error",
+          );
+        }
+      }
 
-    init()
-  </script>
-</body>
+      init();
+    </script>
+  </body>
 </html>

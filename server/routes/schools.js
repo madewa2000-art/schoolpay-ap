@@ -33,6 +33,26 @@ router.get('/:id/stats', ...superOnly, async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// GET /api/schools/:id — full settings for the edit form.
+// Secrets are never returned; only has_* flags say whether one is stored.
+router.get('/:id', ...superOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, slug, type, logo_url,
+              bank_name, bank_account, bank_account_name,
+              paystack_public_key,
+              (paystack_secret_key IS NOT NULL AND paystack_secret_key <> '') AS has_paystack_secret_key,
+              from_email, smtp_host, smtp_port, smtp_user,
+              (smtp_pass IS NOT NULL AND smtp_pass <> '') AS has_smtp_pass,
+              active, created_at
+       FROM schools WHERE id = $1`,
+      [req.params.id]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'School not found' })
+    res.json(rows[0])
+  } catch (err) { next(err) }
+})
+
 // POST /api/schools — onboard a new school
 router.post('/', ...superOnly, async (req, res, next) => {
   try {
