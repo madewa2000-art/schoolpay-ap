@@ -46,12 +46,15 @@ app.use(helmet({
       // External scripts: Paystack popup + jsPDF from CDN.
       scriptSrc:      ["'self'", "'unsafe-inline'", 'https://js.paystack.co', 'https://cdnjs.cloudflare.com'],
       scriptSrcAttr:  ["'unsafe-inline'"],
-      styleSrc:       ["'self'", "'unsafe-inline'"],
-      imgSrc:         ["'self'", 'data:', 'https://res.cloudinary.com'],
+      // paystack.com is needed for style and images: inline.js injects its own
+      // stylesheet from there, which the browser was blocking — the pay button
+      // and popup chrome rendered unstyled.
+      styleSrc:       ["'self'", "'unsafe-inline'", 'https://paystack.com'],
+      imgSrc:         ["'self'", 'data:', 'https://res.cloudinary.com', 'https://paystack.com'],
       // Paystack popup opens as an iframe from checkout.paystack.com
       frameSrc:       ['https://checkout.paystack.com'],
       frameAncestors: ["'none'"],
-      connectSrc:     ["'self'"],
+      connectSrc:     ["'self'", 'https://api.paystack.co'],
       objectSrc:      ["'none'"],
       baseUri:        ["'self'"],
     },
@@ -82,6 +85,20 @@ app.use(express.urlencoded({ extended: false, limit: '100kb' }))
 
 // ─── Static client files ──────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'client')))
+
+// ─── Shareable payment links ─────────────────────────────────────────────────
+// /pay/<school>            → that school's whole fee list
+// /pay/<school>/<category> → only the fees in one category
+//
+// A rewrite rather than a redirect, so the address the school shared is the
+// address the payer keeps seeing. The portal reads the path itself; the slug
+// and category are validated by the API call it makes, not here.
+// Two routes rather than one optional segment: Express 5 uses path-to-regexp
+// v8, where a trailing "?" is no longer valid syntax and throws at startup.
+const sendPortal = (_req, res) =>
+  res.sendFile(path.join(__dirname, '..', 'client', 'portal', 'index.html'))
+app.get('/pay/:slug', sendPortal)
+app.get('/pay/:slug/:category', sendPortal)
 
 // ─── Rate limiters ────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({

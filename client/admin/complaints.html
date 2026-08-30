@@ -89,6 +89,10 @@
     if (user) { initAdminPage({ activePage: 'complaints', titleText: 'Complaints' }); init() }
 
     let currentComplaint = null
+    // Looked up by id rather than serialised into the onclick attribute: a
+    // subject or body containing an apostrophe ("I can't find my receipt")
+    // used to break the attribute and kill the View Thread button.
+    let complaintList = []
 
     async function init() {
       const school = getSchool()
@@ -98,6 +102,7 @@
       try {
         const url = `/s/${school.slug}/admin/complaints${status ? `?status=${status}` : ''}`
         const data = await apiFetch(url)
+        complaintList = data
         if (!data.length) {
           tbody.innerHTML = `<tr><td colspan="7"><div class="sp-empty"><p>No complaints</p></div></td></tr>`
           return
@@ -110,12 +115,14 @@
             <td data-label="Reference">${c.reference ? `<code style="font-size:11px;word-break:break-all">${esc(c.reference)}</code>` : '—'}</td>
             <td data-label="Status">${badgeHTML(c.status)}</td>
             <td data-label="Date">${formatDate(c.created_at)}</td>
-            <td data-label=""><button class="btn btn-primary btn-sm" onclick='openThread(${JSON.stringify(c)})'>View Thread</button></td>
+            <td data-label=""><button class="btn btn-primary btn-sm" onclick="openThread('${esc(c.id)}')">View Thread</button></td>
           </tr>`).join('')
       } catch (err) { toast(err.message, 'error') }
     }
 
-    function openThread(complaint) {
+    function openThread(complaintId) {
+      const complaint = complaintList.find(x => String(x.id) === String(complaintId))
+      if (!complaint) { toast('Complaint not found — reloading', 'error'); init(); return }
       currentComplaint = complaint
       document.getElementById('thread-subject').textContent = complaint.subject
       document.getElementById('thread-meta').textContent = `${complaint.student_name} (${complaint.student_id}) · ${complaint.student_email} · ${formatDate(complaint.created_at)}`

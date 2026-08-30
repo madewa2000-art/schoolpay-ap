@@ -34,7 +34,28 @@ function printReceipt(receipt) {
   row('Student Name',    receipt.student_name,  false)
   row('Student ID',      receipt.student_id,    true)
   row('Class / Level',   receipt.student_class || '—', false)
-  row('Fee Type',        receipt.fee_type,      true)
+
+  // A payment covering several fees lists each line with its own amount, so the
+  // PDF accounts for the total rather than naming one fee for all of it.
+  const items = receipt.items || []
+  if (items.length > 1) {
+    doc.setFillColor(243, 244, 246)
+    doc.rect(14, y - 5, w - 28, 10 + items.length * 7, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text('Fees Paid', 16, y)
+    doc.setFont('helvetica', 'normal')
+    let iy = y
+    for (const it of items) {
+      const label = [it.name, [it.academic_year, it.term].filter(Boolean).join(' ')]
+        .filter(Boolean).join(' — ')
+      doc.text(String(label).slice(0, 52), 75, iy)
+      doc.text(fmt(it.amount), w - 16, iy, { align: 'right' })
+      iy += 7
+    }
+    y = iy + 7
+  } else {
+    row('Fee Type', receipt.fee_type || (items[0] && items[0].name), true)
+  }
+
   row('Reference',       receipt.reference,     false)
   row('Payment Method',  receipt.method === 'paystack' ? 'Online (Paystack)' : 'Bank Deposit', true)
   row('Date Confirmed',  date(receipt.confirmed_at), false)

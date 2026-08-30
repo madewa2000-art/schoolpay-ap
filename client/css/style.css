@@ -724,3 +724,57 @@ code { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 13px; }
   .sp-modal-footer { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
   #sp-toast-container { bottom: max(16px, env(safe-area-inset-bottom)); }
 }
+
+/* ─── Multi-fee selection (portal payment page) ──────────────────────────────── */
+/* Rows rather than cards: a payer picking several fees across several terms is
+   scanning a list and comparing amounts, which reads down a column far better
+   than across a grid of tiles. */
+.sp-cat-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.sp-cat-chip { padding: 7px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--white);
+  font-size: 13px; font-weight: 600; color: var(--muted); transition: background .12s, color .12s, border-color .12s; }
+.sp-cat-chip:hover { border-color: var(--ink); color: var(--ink); text-decoration: none; }
+.sp-cat-chip.active { background: var(--black); border-color: var(--black); color: var(--white); }
+
+.sp-term-group { margin-bottom: 18px; }
+.sp-term-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 0 2px 7px; border-bottom: 1px solid var(--rule); margin-bottom: 4px; }
+.sp-term-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.sp-term-all { font-size: 12px; font-weight: 600; color: var(--ink); background: none; padding: 2px 4px; }
+.sp-term-all:hover { text-decoration: underline; }
+
+.sp-fee-row { display: flex; align-items: center; gap: 12px; padding: 12px 12px; border: 1px solid transparent;
+  border-bottom-color: var(--rule); cursor: pointer; transition: background .12s, border-color .12s; }
+.sp-fee-row:last-child { border-bottom-color: transparent; }
+.sp-fee-row:hover { background: var(--surface); }
+.sp-fee-row.selected { background: var(--surface); border-color: var(--black); border-radius: var(--radius); }
+.sp-fee-check { width: 18px; height: 18px; flex: none; accent-color: var(--black); cursor: pointer; }
+.sp-fee-main { flex: 1; min-width: 0; }
+.sp-fee-title { font-size: 14px; font-weight: 600; color: var(--black); }
+.sp-fee-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.sp-fee-req { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 3px;
+  background: var(--info-light); color: var(--info); font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; vertical-align: 1px; }
+.sp-fee-price { font-size: 14px; font-weight: 700; color: var(--black); white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+
+/* The running total stays on screen while the payer scrolls a long fee list —
+   the whole point of paying several at once is seeing the total build up. */
+.sp-total-bar { position: sticky; bottom: 0; z-index: 5; margin: 18px -4px 0; padding: 14px 16px;
+  background: var(--white); border: 1px solid var(--rule); border-radius: var(--radius);
+  box-shadow: var(--shadow-md); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.sp-total-copy { flex: 1; min-width: 140px; }
+.sp-total-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.sp-total-value { font-size: 24px; font-weight: 800; color: var(--black); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.sp-total-bar .btn { min-width: 190px; }
+.sp-selected-list { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.sp-receipt-lines { width: 100%; font-size: 13px; margin: 4px 0 2px; }
+.sp-receipt-lines td { padding: 7px 0; border-bottom: 1px solid var(--rule); }
+.sp-receipt-lines td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sp-receipt-lines tr:last-child td { border-bottom: none; }
+
+@media (max-width: 560px) {
+  .sp-total-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .sp-total-bar .btn { width: 100%; min-width: 0; }
+  .sp-fee-row { padding: 12px 8px; gap: 10px; }
+}

@@ -126,6 +126,7 @@
       } catch (err) {
         errEl.textContent = err.message
         errEl.style.display = 'block'
+      } finally {
         btnLoading(btn, false, 'Add Staff')
       }
     }

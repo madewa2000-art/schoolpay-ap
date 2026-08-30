@@ -19,12 +19,24 @@
       </header>
 
       <div class="sp-admin-content">
+        <!-- One shareable link per category. The school posts the relevant one
+             instead of sending every payer to the full fee list. -->
+        <div class="sp-card" style="margin-bottom:18px">
+          <div class="sp-card-header">
+            <span class="sp-card-title">Payment Links</span>
+            <span style="font-size:12px;color:var(--muted)">Share a category link and payers see only those fees</span>
+          </div>
+          <div class="sp-card-body" id="cat-links">
+            <span style="font-size:13px;color:var(--muted)"><span class="sp-spinner dark"></span> Loading…</span>
+          </div>
+        </div>
+
         <div class="sp-card">
           <div class="sp-table-wrap">
             <table class="sp-table">
-              <thead><tr><th>Name</th><th>Amount</th><th>Term</th><th>Academic Year</th><th>Mandatory</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Category</th><th>Amount</th><th>Term</th><th>Academic Year</th><th>Mandatory</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody id="fees-tbody">
-                <tr class="sp-loading-row"><td colspan="7"><span class="sp-spinner dark"></span> Loading...</td></tr>
+                <tr class="sp-loading-row"><td colspan="8"><span class="sp-spinner dark"></span> Loading...</td></tr>
               </tbody>
             </table>
           </div>
@@ -65,13 +77,36 @@
         </div>
         <div class="sp-form-row">
           <div class="sp-form-group">
-            <label class="sp-label">Term / Semester</label>
-            <input class="sp-input" id="fee-term" placeholder="e.g. First Term" />
+            <label class="sp-label">Category</label>
+            <input class="sp-input" id="fee-category" list="cat-suggestions" placeholder="e.g. Tuition, Levies, Hostel" />
+            <datalist id="cat-suggestions"></datalist>
+            <small class="sp-input-hint">Fees sharing a category share a payment link. Blank means General.</small>
           </div>
           <div class="sp-form-group">
             <label class="sp-label">Academic Year</label>
             <input class="sp-input" id="fee-year" placeholder="e.g. 2025/2026" />
           </div>
+        </div>
+        <div class="sp-form-group">
+          <label class="sp-label">Term / Semester</label>
+          <input class="sp-input" id="fee-term" placeholder="e.g. First Term" />
+        </div>
+        <!-- Setting one fee up for three terms was three passes through this
+             form. Ticking terms here creates one fee per term in a single save. -->
+        <div class="sp-form-group" id="fee-terms-block">
+          <label class="sp-label">Or create it for several terms at once</label>
+          <div id="fee-terms" style="display:flex;gap:14px;flex-wrap:wrap;padding:4px 0">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink)">
+              <input type="checkbox" class="fee-term-box" value="First Term" style="width:16px;height:16px;accent-color:var(--black)" /> First Term
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink)">
+              <input type="checkbox" class="fee-term-box" value="Second Term" style="width:16px;height:16px;accent-color:var(--black)" /> Second Term
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink)">
+              <input type="checkbox" class="fee-term-box" value="Third Term" style="width:16px;height:16px;accent-color:var(--black)" /> Third Term
+            </label>
+          </div>
+          <small class="sp-input-hint">Ticking any of these creates one fee per ticked term and ignores the single term above.</small>
         </div>
         <div id="fee-error" style="color:var(--danger);font-size:13px;display:none"></div>
       </div>
@@ -91,31 +126,83 @@
     const canEdit = user?.role === 'school_admin'
     if (user) { initAdminPage({ activePage: 'fees', titleText: 'Fee Types' }); if (!canEdit) document.getElementById('add-btn').style.display = 'none'; init() }
 
+    // Row data is held here and looked up by id. It used to be JSON-stringified
+    // straight into the onclick attribute, so any fee whose name or description
+    // contained an apostrophe — "Parents' Levy" — closed the attribute early and
+    // left a dead Edit button.
+    let feeList = []
+
     async function init() {
       const school = getSchool()
       const tbody  = document.getElementById('fees-tbody')
       try {
         const fees = await apiFetch(`/s/${school.slug}/admin/fee-types`)
+        feeList = fees
+        renderCategoryLinks(fees)
         if (!fees.length) {
-          tbody.innerHTML = `<tr><td colspan="7"><div class="sp-empty"><p>No fee types yet</p></div></td></tr>`
+          tbody.innerHTML = `<tr><td colspan="8"><div class="sp-empty"><p>No fee types yet</p></div></td></tr>`
           return
         }
         tbody.innerHTML = fees.map(f => `
           <tr>
-            <td data-label="Name"><strong>${f.name}</strong>${f.description ? `<br><small style="color:var(--muted)">${f.description}</small>` : ''}</td>
+            <td data-label="Name"><strong>${esc(f.name)}</strong>${f.description ? `<br><small style="color:var(--muted)">${esc(f.description)}</small>` : ''}</td>
+            <td data-label="Category">${esc(f.category || 'General')}</td>
             <td data-label="Amount">${formatNaira(f.amount)}</td>
-            <td data-label="Term">${f.term || '—'}</td>
-            <td data-label="Year">${f.academic_year || '—'}</td>
+            <td data-label="Term">${esc(f.term || '—')}</td>
+            <td data-label="Year">${esc(f.academic_year || '—')}</td>
             <td data-label="Mandatory">${f.is_mandatory ? '<span class="badge badge-confirmed">Yes</span>' : '<span class="badge badge-pending">No</span>'}</td>
             <td data-label="Status">${f.active ? '<span class="badge badge-confirmed">Active</span>' : '<span class="badge badge-rejected">Archived</span>'}</td>
             <td data-label="">
               ${canEdit ? `
-                <button class="btn btn-outline btn-sm" onclick='openEditModal(${JSON.stringify(f)})'>Edit</button>
-                ${f.active ? `<button class="btn btn-danger btn-sm" onclick="archiveFee('${f.id}')">Archive</button>` : ''}
+                <button class="btn btn-outline btn-sm" onclick="openEditModal('${esc(f.id)}')">Edit</button>
+                ${f.active ? `<button class="btn btn-danger btn-sm" onclick="archiveFee('${esc(f.id)}')">Archive</button>` : ''}
               ` : '—'}
             </td>
           </tr>`).join('')
       } catch (err) { toast(err.message, 'error') }
+    }
+
+    // One row per category with its own link. Archived fees are ignored — a
+    // link to a category with nothing active in it would open an empty page.
+    function renderCategoryLinks(fees) {
+      const box  = document.getElementById('cat-links')
+      const live = fees.filter(f => f.active)
+      const cats = []
+      for (const f of live) {
+        const slug = f.category_slug || 'general'
+        let c = cats.find(x => x.slug === slug)
+        if (!c) { c = { slug, name: f.category || 'General', count: 0, total: 0 }; cats.push(c) }
+        c.count += 1
+        c.total += Number(f.amount || 0)
+      }
+
+      // Suggest existing categories in the modal so they are reused rather than
+      // retyped into near-duplicates ("Levies" vs "Levy").
+      document.getElementById('cat-suggestions').innerHTML =
+        cats.map(c => `<option value="${esc(c.name)}"></option>`).join('')
+
+      const school = getSchool()
+      const rows = [{ slug: null, name: 'All fees', count: live.length, total: live.reduce((s, f) => s + Number(f.amount || 0), 0) }, ...cats]
+      box.innerHTML = rows.map(c => {
+        const url = `${location.origin}/pay/${encodeURIComponent(school.slug)}${c.slug ? '/' + encodeURIComponent(c.slug) : ''}`
+        return `
+        <div class="sp-share-card" style="margin-bottom:8px">
+          <span class="sp-share-label" style="min-width:150px">${esc(c.name)}
+            <small style="display:block;color:var(--muted);font-weight:400">${c.count} fee${c.count === 1 ? '' : 's'} · ${formatNaira(c.total)}</small>
+          </span>
+          <input class="sp-input sp-share-url" readonly value="${esc(url)}" style="cursor:text" />
+          <button class="btn btn-primary btn-sm" onclick="copyCatLink(this, '${esc(url)}')">Copy</button>
+          <a class="btn btn-outline btn-sm" target="_blank" href="${esc(url)}">Open</a>
+        </div>`
+      }).join('')
+    }
+
+    function copyCatLink(btn, url) {
+      const done = () => toast('Payment link copied', 'success')
+      navigator.clipboard.writeText(url).then(done).catch(() => {
+        const input = btn.parentElement.querySelector('.sp-share-url')
+        input.select(); document.execCommand('copy'); done()
+      })
     }
 
     function openAddModal() {
@@ -127,9 +214,15 @@
       document.getElementById('fee-term').value = ''
       document.getElementById('fee-year').value = ''
       document.getElementById('fee-mandatory').value = 'true'
+      document.getElementById('fee-category').value = ''
+      document.querySelectorAll('.fee-term-box').forEach(b => { b.checked = false })
+      document.getElementById('fee-terms-block').style.display = 'block'
+      document.getElementById('fee-error').style.display = 'none'
       document.getElementById('fee-modal').classList.remove('hidden')
     }
-    function openEditModal(f) {
+    function openEditModal(feeId) {
+      const f = feeList.find(x => String(x.id) === String(feeId))
+      if (!f) { toast('Fee type not found — reloading', 'error'); init(); return }
       document.getElementById('fee-id').value = f.id
       document.getElementById('fee-modal-title').textContent = 'Edit Fee Type'
       document.getElementById('fee-name').value = f.name
@@ -138,6 +231,12 @@
       document.getElementById('fee-term').value = f.term || ''
       document.getElementById('fee-year').value = f.academic_year || ''
       document.getElementById('fee-mandatory').value = f.is_mandatory ? 'true' : 'false'
+      document.getElementById('fee-category').value = f.category || ''
+      document.querySelectorAll('.fee-term-box').forEach(b => { b.checked = false })
+      // Editing changes one fee; creating several terms at once only makes
+      // sense when adding.
+      document.getElementById('fee-terms-block').style.display = 'none'
+      document.getElementById('fee-error').style.display = 'none'
       document.getElementById('fee-modal').classList.remove('hidden')
     }
     function closeFeeModal() { document.getElementById('fee-modal').classList.add('hidden') }
@@ -149,26 +248,41 @@
       errEl.style.display = 'none'
       btnLoading(btn, true)
       const school = getSchool()
+      const amount = parseFloat(document.getElementById('fee-amount').value)
       const body = {
         name:          document.getElementById('fee-name').value.trim(),
         description:   document.getElementById('fee-desc').value.trim(),
-        amount:        parseFloat(document.getElementById('fee-amount').value),
+        amount,
         term:          document.getElementById('fee-term').value.trim(),
         academic_year: document.getElementById('fee-year').value.trim(),
         is_mandatory:  document.getElementById('fee-mandatory').value === 'true',
+        category:      document.getElementById('fee-category').value.trim(),
       }
+
+      // A blank amount used to save as NaN, which reached the portal as a fee
+      // nobody could pay. It is caught here instead.
+      if (!body.name)                      { errEl.textContent = 'Fee name is required'; errEl.style.display = 'block'; btnLoading(btn, false, 'Save'); return }
+      if (!Number.isFinite(amount) || amount < 0) { errEl.textContent = 'Enter a valid amount'; errEl.style.display = 'block'; btnLoading(btn, false, 'Save'); return }
+
+      const terms = [...document.querySelectorAll('.fee-term-box')].filter(b => b.checked).map(b => b.value)
+      if (!id && terms.length) body.terms = terms
+
       try {
         if (id) {
           await apiFetch(`/s/${school.slug}/admin/fee-types/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
         } else {
           await apiFetch(`/s/${school.slug}/admin/fee-types`, { method: 'POST', body: JSON.stringify(body) })
         }
-        toast(`Fee type ${id ? 'updated' : 'created'}!`, 'success')
+        toast(id ? 'Fee type updated!'
+                 : terms.length ? `Created for ${terms.length} terms!` : 'Fee type created!', 'success')
         closeFeeModal()
         init()
       } catch (err) {
         errEl.textContent = err.message
         errEl.style.display = 'block'
+      } finally {
+        // Must run on the success path too: the modal is reused, so a button
+        // left disabled here is a dead Save button the next time it opens.
         btnLoading(btn, false, 'Save')
       }
     }

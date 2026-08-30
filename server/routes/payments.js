@@ -6,6 +6,7 @@ import { verifyToken, requireRole } from '../middleware/auth.js'
 import { generateReference, generateReceiptNumber } from '../utils/reference.js'
 import { initializeTransaction, refundTransaction } from '../utils/paystack.js'
 import { sendReceiptEmail }         from '../utils/mailer.js'
+import { normalizeCategory, DEFAULT_CATEGORY } from '../utils/category.js'
 
 const router = Router({ mergeParams: true })
 
@@ -26,14 +27,38 @@ function csvEscape(value) {
 // ─── Public: get school info + active fee types (for student payment form) ───
 router.get('/public', attachSchool, async (req, res, next) => {
   try {
-    const { rows: feeTypes } = await pool.query(
-      `SELECT id, name, description, amount, term, academic_year, is_mandatory
+    // Fees come back grouped-ready: ordered by category, then term, so the
+    // portal can render sections without sorting client-side. `?category=` is
+    // what a per-category payment link resolves to.
+    const wanted = req.query.category ? String(req.query.category) : null
+    const { rows: allFees } = await pool.query(
+      `SELECT id, name, description, amount, term, academic_year, is_mandatory,
+              COALESCE(category, $2)      AS category,
+              COALESCE(category_slug, $3) AS category_slug
        FROM payment_types
        WHERE school_id = $1 AND active = true
-       ORDER BY is_mandatory DESC, name`,
-      [req.school.id]
+       ORDER BY COALESCE(category, $2), academic_year NULLS LAST, term NULLS LAST,
+                is_mandatory DESC, name`,
+      [req.school.id, DEFAULT_CATEGORY, 'general']
     )
+
+    // Every category that has at least one active fee, for the category picker
+    // and for the admin's list of shareable links.
+    const categories = []
+    for (const f of allFees) {
+      let c = categories.find((x) => x.slug === f.category_slug)
+      if (!c) { c = { name: f.category, slug: f.category_slug, count: 0, total: 0 }; categories.push(c) }
+      c.count += 1
+      c.total += Number(f.amount || 0)
+    }
+
+    const feeTypes = wanted ? allFees.filter((f) => f.category_slug === wanted) : allFees
+    if (wanted && !feeTypes.length)
+      return res.status(404).json({ error: 'No fees found in that category' })
+
     res.json({
+      categories,
+      category: wanted ? { name: feeTypes[0].category, slug: wanted } : null,
       school: {
         id:               req.school.id,
         name:             req.school.name,
@@ -52,83 +77,175 @@ router.get('/public', attachSchool, async (req, res, next) => {
 
 // ─── Public: initiate a payment ───────────────────────────────────────────────
 router.post('/payments/initiate', attachSchool, async (req, res, next) => {
+  const client = await pool.connect()
   try {
-    const { payment_type_id, student_id, student_name, student_email, student_class, method } = req.body
+    const { payment_type_id, payment_type_ids, student_id, student_name,
+            student_email, student_class, method } = req.body
 
-    if (!payment_type_id || !student_id || !student_name || !student_email || !method)
-      return res.status(400).json({ error: 'payment_type_id, student_id, student_name, student_email and method are required' })
+    // One fee or many. `payment_type_id` is still accepted so older links and
+    // any cached page keep working; internally everything is a list.
+    const requested = [...new Set(
+      (Array.isArray(payment_type_ids) && payment_type_ids.length
+        ? payment_type_ids
+        : [payment_type_id]).filter(Boolean)
+    )]
+
+    if (!requested.length || !student_id || !student_name || !student_email || !method)
+      return res.status(400).json({ error: 'At least one fee, student_id, student_name, student_email and method are required' })
+
+    // A cap, not a limit anyone will meet: it stops a crafted request asking
+    // for thousands of rows in one transaction.
+    if (requested.length > 30)
+      return res.status(400).json({ error: 'Too many fees in one payment (maximum 30)' })
 
     if (!['paystack','bank'].includes(method))
       return res.status(400).json({ error: 'method must be paystack or bank' })
 
+    // Amounts always come from the database, never from the request — the
+    // payer's browser must not be able to name its own price.
     const feeRes = await pool.query(
-      'SELECT * FROM payment_types WHERE id = $1 AND school_id = $2 AND active = true',
-      [payment_type_id, req.school.id]
+      `SELECT * FROM payment_types
+       WHERE id = ANY($1::uuid[]) AND school_id = $2 AND active = true`,
+      [requested, req.school.id]
     )
-    if (!feeRes.rows.length)
-      return res.status(404).json({ error: 'Fee type not found' })
+    if (feeRes.rows.length !== requested.length)
+      return res.status(404).json({ error: 'One or more fee types were not found' })
 
-    const fee = feeRes.rows[0]
+    const fees  = feeRes.rows
+    const total = fees.reduce((sum, f) => sum + Number(f.amount), 0)
+    if (!(total > 0))
+      return res.status(400).json({ error: 'The selected fees have no amount set. Please contact the school.' })
 
-    // Idempotency: prevent duplicate charges for the same student + fee
-    const dupCheck = await pool.query(
-      `SELECT id, reference FROM payments
-       WHERE school_id = $1 AND student_id = $2 AND payment_type_id = $3 AND status = 'pending'
-       LIMIT 1`,
-      [req.school.id, student_id, payment_type_id]
+    const feeIdSet = new Set(fees.map((f) => String(f.id)))
+    const single   = fees.length === 1 ? fees[0] : null
+
+    // Resume rather than duplicate.
+    //
+    // This used to return 409, which was a dead end — a payer who started a
+    // bank transfer and came back later could never get past it. Now a pending
+    // payment covering exactly the same set of fees is resumed.
+    //
+    // The reference is deliberately NOT regenerated: Paystack matches its
+    // webhook on the reference, so rotating it on an already-attempted payment
+    // would orphan a real one. Amount and method are refreshed, since the payer
+    // may have switched method or the school may have repriced a fee.
+    const { rows: pendings } = await pool.query(
+      `SELECT p.*, COALESCE(
+                array_agg(pi.payment_type_id::text) FILTER (WHERE pi.payment_type_id IS NOT NULL),
+                ARRAY[]::text[]
+              ) AS item_type_ids
+         FROM payments p
+         LEFT JOIN payment_items pi ON pi.payment_id = p.id
+        WHERE p.school_id = $1 AND p.student_id = $2 AND p.status = 'pending'
+        GROUP BY p.id
+        ORDER BY p.created_at DESC`,
+      [req.school.id, student_id]
     )
-    if (dupCheck.rows.length) {
-      return res.status(409).json({
-        error: 'A pending payment already exists for this student and fee type.',
-        existing_reference: dupCheck.rows[0].reference,
-      })
-    }
-
-    const reference = generateReference({
-      slug:            req.school.slug,
-      schoolType:      req.school.type,
-      paymentTypeName: fee.name,
+    const resumable = pendings.find((p) => {
+      const ids = new Set(
+        (p.item_type_ids || []).length
+          ? p.item_type_ids.map(String)
+          : (p.payment_type_id ? [String(p.payment_type_id)] : [])
+      )
+      return ids.size === feeIdSet.size && [...feeIdSet].every((id) => ids.has(id))
     })
 
-    const { rows } = await pool.query(
-      `INSERT INTO payments
-         (school_id, payment_type_id, student_id, student_name, student_email, student_class,
-          reference, amount, method, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')
-       RETURNING *`,
-      [req.school.id, payment_type_id, student_id, student_name, student_email,
-       student_class || null, reference, fee.amount, method]
-    )
-    const payment = rows[0]
+    let payment
+    await client.query('BEGIN')
+    try {
+      if (resumable) {
+        const { rows } = await client.query(
+          `UPDATE payments
+              SET method = $1, amount = $2, student_name = $3,
+                  student_email = $4, student_class = $5, payment_type_id = $6
+            WHERE id = $7
+          RETURNING *`,
+          [method, total, student_name, student_email, student_class || null,
+           single ? single.id : null, resumable.id]
+        )
+        payment = rows[0]
+        await client.query('DELETE FROM payment_items WHERE payment_id = $1', [payment.id])
+      } else {
+        const reference = generateReference({
+          slug:            req.school.slug,
+          schoolType:      req.school.type,
+          paymentTypeName: single ? single.name : 'Multiple Fees',
+        })
+        const { rows } = await client.query(
+          `INSERT INTO payments
+             (school_id, payment_type_id, student_id, student_name, student_email, student_class,
+              reference, amount, method, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')
+           RETURNING *`,
+          [req.school.id, single ? single.id : null, student_id, student_name, student_email,
+           student_class || null, reference, total, method]
+        )
+        payment = rows[0]
+      }
+
+      // Lines are written for every payment, single or not, so the receipt and
+      // the clearance check have one shape to read. Name, term and year are
+      // snapshotted: the receipt must keep saying what was actually paid for
+      // even after the school renames or reprices the fee.
+      for (const f of fees) {
+        await client.query(
+          `INSERT INTO payment_items (payment_id, payment_type_id, name, term, academic_year, amount)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [payment.id, f.id, f.name, f.term, f.academic_year, f.amount]
+        )
+      }
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    }
+
+    const reference = payment.reference
+    const items = fees.map((f) => ({
+      payment_type_id: f.id, name: f.name, term: f.term,
+      academic_year: f.academic_year, amount: f.amount,
+    }))
 
     if (method === 'paystack') {
       if (!req.school.paystack_secret_key)
         return res.status(400).json({ error: 'School has not configured Paystack' })
 
-      const paystackData = await initializeTransaction({
-        secretKey:   req.school.paystack_secret_key,
-        email:       student_email,
-        amountKobo:  toKobo(fee.amount),
-        reference,
-        callbackUrl: `${process.env.CLIENT_URL}/portal/verify.html?school=${req.school.slug}&ref=${reference}`,
-        metadata:    { student_id, student_name, school: req.school.name },
-      })
-      return res.json({ payment, paystack: paystackData })
+      // Resuming re-initialises a reference Paystack has already seen, which it
+      // can reject. That must not block the payer: the inline popup only needs
+      // the reference and the public key, so a failed re-initialise is logged
+      // and the payment returned anyway. A first attempt still fails hard.
+      let paystackData = null
+      try {
+        paystackData = await initializeTransaction({
+          secretKey:   req.school.paystack_secret_key,
+          email:       student_email,
+          amountKobo:  toKobo(total),
+          reference,
+          callbackUrl: `${process.env.CLIENT_URL}/portal/verify.html?school=${req.school.slug}&ref=${reference}`,
+          metadata:    { student_id, student_name, school: req.school.name, fees: fees.map((f) => f.name) },
+        })
+      } catch (err) {
+        console.error('PAYSTACK_INIT_FAILED', reference, err.response?.data?.message || err.message)
+        if (!resumable) throw err
+      }
+      return res.json({ payment, items, paystack: paystackData })
     }
 
     // bank method — return bank details + reference
     res.json({
       payment,
+      items,
       bankDetails: {
         bank_name:         req.school.bank_name,
         account_number:    req.school.bank_account,
         account_name:      req.school.bank_account_name,
-        amount:            fee.amount,
+        amount:            total,
         reference,
         instruction: `Use reference "${reference}" as your payment narration/description`,
       },
     })
   } catch (err) { next(err) }
+  finally { client.release() }
 })
 
 // ─── Public: verify Paystack payment after redirect ──────────────────────────
@@ -137,13 +254,25 @@ router.get('/payments/verify', attachSchool, async (req, res, next) => {
     const { ref } = req.query
     if (!ref) return res.status(400).json({ error: 'ref required' })
 
+    // The receipt number lives in `receipts`, not on the payment row. Selecting
+    // only from `payments` meant receipt_number was always undefined, so the
+    // "View Receipt" button on the success screen never had a link to point at.
     const payRes = await pool.query(
-      'SELECT * FROM payments WHERE reference = $1 AND school_id = $2',
+      `SELECT p.*, pt.name AS fee_type_name, r.receipt_number
+       FROM payments p
+       LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
+       LEFT JOIN receipts r ON r.payment_id = p.id
+       WHERE p.reference = $1 AND p.school_id = $2`,
       [ref, req.school.id]
     )
     if (!payRes.rows.length) return res.status(404).json({ error: 'Payment not found' })
 
-    res.json(payRes.rows[0])
+    const { rows: items } = await pool.query(
+      `SELECT name, term, academic_year, amount FROM payment_items
+       WHERE payment_id = $1 ORDER BY name`,
+      [payRes.rows[0].id]
+    )
+    res.json({ ...payRes.rows[0], items })
   } catch (err) { next(err) }
 })
 
@@ -155,10 +284,17 @@ router.get('/payments/history', attachSchool, async (req, res, next) => {
       return res.status(400).json({ error: 'student_id and student_email required' })
 
     const { rows } = await pool.query(
-      `SELECT p.*, pt.name AS fee_type_name, r.receipt_number
+      `SELECT p.*, r.receipt_number,
+              COALESCE(pt.name, i.item_names) AS fee_type_name,
+              COALESCE(i.item_count, 1)       AS item_count
        FROM payments p
        LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
        LEFT JOIN receipts r ON r.payment_id = p.id
+       LEFT JOIN LATERAL (
+         SELECT string_agg(pi.name || COALESCE(' (' || pi.term || ')', ''), ', ' ORDER BY pi.name, pi.term) AS item_names,
+                COUNT(*)                                   AS item_count
+         FROM payment_items pi WHERE pi.payment_id = p.id
+       ) i ON true
        WHERE p.school_id = $1 AND p.student_id = $2 AND p.student_email = $3
        ORDER BY p.created_at DESC`,
       [req.school.id, student_id, student_email]
@@ -184,11 +320,20 @@ router.get('/admin/payments', attachSchool, verifyToken,
     if (to)         { conditions.push(`p.created_at <= $${i++}`);    vals.push(to) }
 
     const where = conditions.join(' AND ')
+    // A multi-fee payment has no single payment_type_id, so the fee column
+    // falls back to the names on its lines.
     const { rows } = await pool.query(
-      `SELECT p.*, pt.name AS fee_type_name, r.receipt_number
+      `SELECT p.*, r.receipt_number,
+              COALESCE(pt.name, i.item_names) AS fee_type_name,
+              COALESCE(i.item_count, 1)       AS item_count
        FROM payments p
        LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
        LEFT JOIN receipts r ON r.payment_id = p.id
+       LEFT JOIN LATERAL (
+         SELECT string_agg(pi.name || COALESCE(' (' || pi.term || ')', ''), ', ' ORDER BY pi.name, pi.term) AS item_names,
+                COUNT(*)                                   AS item_count
+         FROM payment_items pi WHERE pi.payment_id = p.id
+       ) i ON true
        WHERE ${where}
        ORDER BY p.created_at DESC
        LIMIT $${i++} OFFSET $${i++}`,
@@ -309,24 +454,44 @@ router.get('/admin/fee-types', attachSchool, verifyToken,
   requireRole('school_admin','bursar','accountant'), async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      'SELECT * FROM payment_types WHERE school_id = $1 ORDER BY created_at',
-      [req.school.id]
+      `SELECT *, COALESCE(category, $2) AS category,
+              COALESCE(category_slug, 'general') AS category_slug
+       FROM payment_types WHERE school_id = $1
+       ORDER BY COALESCE(category, $2), academic_year NULLS LAST, term NULLS LAST, created_at`,
+      [req.school.id, DEFAULT_CATEGORY]
     )
     res.json(rows)
   } catch (err) { next(err) }
 })
 
+// Creates a fee type. `terms` creates the same fee once per term in one call —
+// setting up "Tuition" for three terms was three trips through the form, and a
+// school doing that for eight fee types was doing it twenty-four times.
 router.post('/admin/fee-types', attachSchool, verifyToken,
   requireRole('school_admin'), async (req, res, next) => {
   try {
-    const { name, description, amount, term, academic_year, is_mandatory } = req.body
+    const { name, description, amount, term, academic_year, is_mandatory, terms } = req.body
     if (!name) return res.status(400).json({ error: 'name is required' })
-    const { rows } = await pool.query(
-      `INSERT INTO payment_types (school_id, name, description, amount, term, academic_year, is_mandatory)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.school.id, name, description, amount || 0, term, academic_year, is_mandatory ?? true]
-    )
-    res.status(201).json(rows[0])
+
+    const { category, category_slug } = normalizeCategory(req.body.category)
+    const termList = Array.isArray(terms) && terms.length
+      ? [...new Set(terms.map((t) => String(t).trim()).filter(Boolean))]
+      : [term]
+    if (termList.length > 12)
+      return res.status(400).json({ error: 'Too many terms in one request (maximum 12)' })
+
+    const created = []
+    for (const t of termList) {
+      const { rows } = await pool.query(
+        `INSERT INTO payment_types
+           (school_id, name, description, amount, term, academic_year, is_mandatory, category, category_slug)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [req.school.id, name, description, amount || 0, t || null, academic_year,
+         is_mandatory ?? true, category, category_slug]
+      )
+      created.push(rows[0])
+    }
+    res.status(201).json(created.length === 1 ? created[0] : { created, count: created.length })
   } catch (err) { next(err) }
 })
 
@@ -335,10 +500,18 @@ router.patch('/admin/fee-types/:feeId', attachSchool, verifyToken,
   try {
     const allowed = ['name','description','amount','term','academic_year','is_mandatory','active']
     const fields  = Object.keys(req.body).filter(k => allowed.includes(k))
+    const vals    = fields.map(f => req.body[f])
+
+    // Category is set as a pair — the label and its URL form must stay in step,
+    // or the per-category payment link stops finding the fee.
+    if (req.body.category !== undefined) {
+      const { category, category_slug } = normalizeCategory(req.body.category)
+      fields.push('category', 'category_slug')
+      vals.push(category, category_slug)
+    }
     if (!fields.length) return res.status(400).json({ error: 'No valid fields to update' })
 
     const sets = fields.map((f, i) => `${f} = $${i + 3}`).join(', ')
-    const vals = fields.map(f => req.body[f])
     const { rows } = await pool.query(
       `UPDATE payment_types SET ${sets}
        WHERE id = $1 AND school_id = $2 RETURNING *`,
@@ -439,7 +612,11 @@ router.get('/admin/payments/export', attachSchool, verifyToken,
 
     const { rows } = await pool.query(
       `SELECT p.student_id, p.student_name, p.student_email, p.student_class,
-              pt.name AS fee_type, p.reference, p.amount, p.method,
+              COALESCE(pt.name, (
+                SELECT string_agg(pi.name || COALESCE(' (' || pi.term || ')', ''), ' + ' ORDER BY pi.name, pi.term)
+                FROM payment_items pi WHERE pi.payment_id = p.id
+              )) AS fee_type,
+              p.reference, p.amount, p.method,
               p.confirmed_at, r.receipt_number
        FROM payments p
        LEFT JOIN payment_types pt ON pt.id = p.payment_type_id

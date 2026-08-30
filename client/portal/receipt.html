@@ -49,7 +49,7 @@
             <tr style="background:#F5F5F5"><td style="padding:10px 12px;font-weight:700;width:40%;color:#1A1A1A">Student Name</td><td style="padding:10px 12px;color:#2D2D2D" id="r-student-name"></td></tr>
             <tr><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Student ID</td><td style="padding:10px 12px;color:#2D2D2D" id="r-student-id"></td></tr>
             <tr style="background:#F5F5F5"><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Class / Level</td><td style="padding:10px 12px;color:#2D2D2D" id="r-class"></td></tr>
-            <tr><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Fee Type</td><td style="padding:10px 12px;color:#2D2D2D" id="r-fee-type"></td></tr>
+            <tr><td style="padding:10px 12px;font-weight:700;color:#1A1A1A;vertical-align:top">Fee Type</td><td style="padding:10px 12px;color:#2D2D2D" id="r-fee-type"></td></tr>
             <tr style="background:#F5F5F5"><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Reference</td><td style="padding:10px 12px;font-family:monospace;color:#2D2D2D" id="r-reference"></td></tr>
             <tr><td style="padding:10px 12px;font-weight:700;color:#1A1A1A">Payment Method</td><td style="padding:10px 12px;color:#2D2D2D" id="r-method"></td></tr>
             <tr style="background:#0F0F0F;color:white">
@@ -113,7 +113,19 @@
       document.getElementById('r-student-name').textContent  = r.student_name
       document.getElementById('r-student-id').textContent    = r.student_id
       document.getElementById('r-class').textContent         = r.student_class || '—'
-      document.getElementById('r-fee-type').textContent      = r.fee_type
+      // A payment covering several fees itemises them here, so the receipt
+      // shows what was actually bought rather than one blank or truncated line.
+      const feeCell = document.getElementById('r-fee-type')
+      const items   = r.items || []
+      if (items.length > 1) {
+        feeCell.innerHTML = items.map(it => `
+          <div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0">
+            <span>${esc(it.name)}${it.term ? ` <span style="color:#888;font-size:11px">(${esc([it.academic_year, it.term].filter(Boolean).join(' · '))})</span>` : ''}</span>
+            <span style="white-space:nowrap">${fmt(it.amount)}</span>
+          </div>`).join('')
+      } else {
+        feeCell.textContent = r.fee_type || (items[0] && items[0].name) || '—'
+      }
       document.getElementById('r-reference').textContent     = r.reference
       document.getElementById('r-method').textContent        = r.method === 'paystack' ? 'Online (Paystack)' : 'Bank Deposit'
       document.getElementById('r-amount').textContent        = fmt(r.amount)

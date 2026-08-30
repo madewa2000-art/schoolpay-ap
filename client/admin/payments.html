@@ -178,6 +178,7 @@
         loadPayments()
       } catch (err) {
         toast(err.message, 'error')
+      } finally {
         btnLoading(btn, false, 'Confirm Payment')
       }
     }

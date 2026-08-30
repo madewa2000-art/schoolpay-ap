@@ -30,7 +30,9 @@
 
         <!-- Share portal link with students -->
         <div class="sp-share-card">
-          <span class="sp-share-label">Student Portal</span>
+          <span class="sp-share-label">Student Portal
+            <small style="display:block;color:var(--muted);font-weight:400">Per-category links live on <a href="/admin/fees.html">Fee Types</a></small>
+          </span>
           <input id="portal-url" class="sp-input sp-share-url" readonly style="cursor:text" />
           <button class="btn btn-primary btn-sm" onclick="copyLink()">Copy Link</button>
           <a id="portal-open" class="btn btn-outline btn-sm" target="_blank">Open</a>
@@ -65,7 +67,9 @@
     async function init() {
       const school = getSchool()
       if (!school) return
-      const portalUrl = `${location.origin}/portal/index.html?school=${school.slug}`
+      // The short form of the same page — this is the link schools actually
+      // share, and it is what the per-category links on Fee Types extend.
+      const portalUrl = `${location.origin}/pay/${encodeURIComponent(school.slug)}`
       document.getElementById('portal-link').href = portalUrl
       document.getElementById('portal-url').value  = portalUrl
       document.getElementById('portal-open').href  = portalUrl
@@ -89,12 +93,12 @@
         }
         tbody.innerHTML = payments.map(p => `
           <tr>
-            <td data-label="Student">${p.student_name}</td>
-            <td data-label="ID"><code>${p.student_id}</code></td>
-            <td data-label="Fee Type">${p.fee_type_name || '—'}</td>
-            <td data-label="Reference"><code style="font-size:11px;word-break:break-all">${p.reference}</code></td>
+            <td data-label="Student">${esc(p.student_name)}</td>
+            <td data-label="ID"><code>${esc(p.student_id)}</code></td>
+            <td data-label="Fee Type">${esc(p.fee_type_name || '—')}</td>
+            <td data-label="Reference"><code style="font-size:11px;word-break:break-all">${esc(p.reference)}</code></td>
             <td data-label="Amount"><strong>${formatNaira(p.amount)}</strong></td>
-            <td data-label="Method">${p.method}</td>
+            <td data-label="Method">${esc(p.method)}</td>
             <td data-label="Status">${badgeHTML(p.status)}</td>
             <td data-label="Date">${formatDate(p.created_at)}</td>
           </tr>`).join('')

@@ -283,12 +283,12 @@
           .map(
             (f) => `
         <tr>
-          <td>${f.name}</td>
+          <td>${esc(f.name)}</td>
           <td>${fmt(f.amount)}</td>
           <td style="color:${f.status === "confirmed" ? "var(--success)" : "var(--danger)"};font-weight:700">
             ${f.status === "confirmed" ? "Cleared" : "Outstanding"}
           </td>
-          <td><code style="font-size:12px">${f.receipt_number || "—"}</code></td>
+          <td><code style="font-size:12px">${esc(f.receipt_number || "—")}</code></td>
         </tr>`,
           )
           .join("");

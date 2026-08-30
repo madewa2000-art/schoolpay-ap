@@ -20,7 +20,15 @@ router.get('/receipts/:receiptNumber', attachSchool, async (req, res, next) => {
       [req.params.receiptNumber, req.school.id]
     )
     if (!rows.length) return res.status(404).json({ error: 'Receipt not found' })
-    res.json(rows[0])
+
+    // A receipt covering several fees itemises them; a single-fee receipt still
+    // has one line, so the receipt page has one shape to render either way.
+    const { rows: items } = await pool.query(
+      `SELECT name, term, academic_year, amount FROM payment_items
+       WHERE payment_id = $1 ORDER BY name`,
+      [rows[0].payment_id]
+    )
+    res.json({ ...rows[0], items })
   } catch (err) { next(err) }
 })
 
@@ -37,14 +45,28 @@ router.get('/clearance', attachSchool, async (req, res, next) => {
     if (academic_year) { conditions.push(`pt.academic_year = $${i++}`); vals.push(academic_year) }
     if (term)          { conditions.push(`pt.term = $${i++}`);          vals.push(term) }
 
+    // A fee is cleared if a confirmed payment covers it — either as the whole
+    // payment (payment_type_id) or as one line of a combined payment
+    // (payment_items). Before multi-fee payments existed only the first case
+    // was checked, so paying three fees together left all three showing as
+    // outstanding on the clearance certificate.
+    const sid = i++, semail = i++
     const { rows: feeTypes } = await pool.query(
-      `SELECT pt.id, pt.name, pt.amount, pt.term, pt.academic_year,
-              p.status, p.reference, r.receipt_number
+      `SELECT pt.id, pt.name, pt.amount, pt.term, pt.academic_year, pt.category,
+              paid.status, paid.reference, paid.receipt_number
        FROM payment_types pt
-       LEFT JOIN payments p ON p.payment_type_id = pt.id
-         AND p.student_id = $${i++} AND p.student_email = $${i++}
-         AND p.status = 'confirmed'
-       LEFT JOIN receipts r ON r.payment_id = p.id
+       LEFT JOIN LATERAL (
+         SELECT p.status, p.reference, r.receipt_number
+         FROM payments p
+         LEFT JOIN payment_items pi ON pi.payment_id = p.id
+         LEFT JOIN receipts r ON r.payment_id = p.id
+         WHERE p.school_id = pt.school_id
+           AND p.student_id = $${sid} AND p.student_email = $${semail}
+           AND p.status = 'confirmed'
+           AND (p.payment_type_id = pt.id OR pi.payment_type_id = pt.id)
+         ORDER BY p.confirmed_at DESC NULLS LAST
+         LIMIT 1
+       ) paid ON true
        WHERE ${conditions.join(' AND ')}
        ORDER BY pt.name`,
       [...vals, student_id, student_email]

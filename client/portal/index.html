@@ -4,7 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Make a Payment — SchoolPay</title>
-  <link rel="stylesheet" href="../css/style.css" />
+  <!-- Absolute paths: this page is also served at /pay/<school>/<category>,
+       where a relative href would resolve under /pay/ and 404. -->
+  <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
   <div class="sp-portal-page">
@@ -26,24 +28,37 @@
       <div id="payment-section" style="display:none">
         <div class="sp-portal-header">
           <h1 id="school-title">Make a Payment</h1>
-          <p id="school-subtitle">Select your fee type and complete the payment below</p>
+          <p id="school-subtitle">Choose the fees you are paying for</p>
         </div>
 
         <div class="sp-payment-card">
-          <!-- Step 1: Fee selection -->
+          <!-- Step 1: fee selection -->
           <div id="step-fee">
-            <p class="sp-label" style="margin-bottom:10px">Select Fee Type</p>
-            <div class="sp-fee-grid" id="fee-grid">
-              <div style="color:var(--muted);font-size:13px"><span class="sp-spinner dark"></span> Loading fees...</div>
+            <div class="sp-cat-bar" id="cat-bar"></div>
+
+            <div id="fee-list">
+              <div style="color:var(--muted);font-size:13px"><span class="sp-spinner dark"></span> Loading fees…</div>
             </div>
 
-            <div class="sp-amount-display" id="amount-display">&#x20A6; 0.00</div>
-
-            <p class="sp-label" style="margin-bottom:10px">Payment Method</p>
-            <div class="sp-method-tabs">
-              <button class="sp-method-tab active" id="tab-paystack" onclick="setMethod('paystack')">Pay Online (Paystack)</button>
-              <button class="sp-method-tab" id="tab-bank" onclick="setMethod('bank')">Bank Transfer / Cheque</button>
+            <div class="sp-total-bar" id="total-bar" style="display:none">
+              <div class="sp-total-copy">
+                <div class="sp-total-label">Total to pay</div>
+                <div class="sp-total-value" id="total-value">&#x20A6;0.00</div>
+                <div class="sp-selected-list" id="total-note">Nothing selected yet</div>
+              </div>
+              <button class="btn btn-primary" id="pay-btn" onclick="startPayment()">
+                <span id="pay-btn-label">Continue</span>
+              </button>
             </div>
+          </div>
+
+          <!-- Step 2: payer details + method -->
+          <div id="step-details" style="display:none">
+            <button class="sp-term-all" style="margin-bottom:14px" onclick="backToFees()">&#8592; Back to fees</button>
+
+            <p class="sp-label" style="margin-bottom:8px">You are paying for</p>
+            <table class="sp-receipt-lines"><tbody id="summary-lines"></tbody></table>
+            <div class="sp-amount-display" id="amount-display">&#x20A6;0.00</div>
 
             <p class="sp-label" style="margin-top:20px;margin-bottom:10px">Your Details</p>
             <div class="sp-form-row">
@@ -67,9 +82,15 @@
               </div>
             </div>
 
+            <p class="sp-label" style="margin-top:16px;margin-bottom:10px">Payment Method</p>
+            <div class="sp-method-tabs">
+              <button class="sp-method-tab active" id="tab-paystack" onclick="setMethod('paystack')">Pay Online (Paystack)</button>
+              <button class="sp-method-tab" id="tab-bank" onclick="setMethod('bank')">Bank Transfer / Cheque</button>
+            </div>
+
             <div id="form-error" style="color:var(--danger);font-size:12px;margin-bottom:12px;display:none"></div>
-            <button class="btn btn-primary btn-block" id="pay-btn" onclick="initiate()">
-              <span id="pay-btn-label">Pay Now</span>
+            <button class="btn btn-primary btn-block" id="submit-btn" onclick="initiate()">
+              <span id="submit-btn-label">Pay Now</span>
             </button>
             <p style="text-align:center;font-size:11px;color:var(--subtle);margin-top:12px">Secured by SchoolPay</p>
           </div>
@@ -86,25 +107,13 @@
               <p><strong>Account Name:</strong> <span id="bank-account-name">—</span></p>
               <p><strong>Amount:</strong> <span id="bank-amount">—</span></p>
             </div>
-            <p class="sp-label" style="margin-bottom:6px">Your Payment Reference</p>
+            <p class="sp-label" style="margin:16px 0 6px">Covering</p>
+            <table class="sp-receipt-lines"><tbody id="bank-lines"></tbody></table>
+            <p class="sp-label" style="margin:16px 0 6px">Your Payment Reference</p>
             <div class="sp-ref-box" id="bank-reference">—</div>
             <p style="font-size:11px;color:var(--danger);margin:8px 0 20px">Use this reference exactly as your bank narration. Keep a copy.</p>
             <button class="btn btn-primary btn-block" onclick="goToUpload()">Upload Bank Proof</button>
             <button class="btn btn-outline btn-block" style="margin-top:10px" onclick="resetForm()">Make Another Payment</button>
-          </div>
-
-          <!-- Success step -->
-          <div id="step-success" style="display:none;text-align:center;padding:20px 0">
-            <div style="width:48px;height:48px;border-radius:50%;background:var(--success);margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
-            <h2 style="color:var(--black)">Payment Successful</h2>
-            <p style="color:var(--muted);margin-top:8px;font-size:13px">Receipt emailed to <strong id="success-email"></strong></p>
-            <div class="sp-ref-box" id="success-receipt" style="margin:16px 0"></div>
-            <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
-              <a id="receipt-link" class="btn btn-primary" href="#">View Receipt</a>
-              <button class="btn btn-outline" onclick="resetForm()">Make Another Payment</button>
-            </div>
           </div>
         </div>
       </div>
@@ -113,66 +122,215 @@
 
   <div id="sp-toast-container"></div>
   <script src="https://js.paystack.co/v1/inline.js"></script>
-  <script src="../js/api.js"></script>
-  <script src="../js/auth.js"></script>
-  <script src="../js/main.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/main.js"></script>
   <script>
-    let school = null
-    let feeTypes = []
-    let selectedFee = null
-    let method = 'paystack'
+    // Payment page.
+    //
+    // A payer selects any number of fees — across terms and categories — and
+    // pays the whole lot in one transaction with one reference and one receipt.
+    // Arriving through /pay/<school>/<category> narrows the list to that
+    // category; the full portal shows everything with category chips.
+
+    let school       = null
+    let feeTypes     = []
+    let categories   = []
+    let activeCat    = null              // category slug currently filtered to
+    let lockedCat    = null              // set when arrived via a category link
+    let selected     = new Set()         // fee type ids
+    let method       = 'paystack'
 
     async function init() {
       const slug = getPortalSlug()
       if (!slug) { document.getElementById('no-school').style.display = 'block'; return }
+      lockedCat = getPortalCategory()
+      activeCat = lockedCat
+
       try {
-        const data = await apiFetch(`/s/${slug}/public`)
-        school   = data.school
-        feeTypes = data.feeTypes
+        // The category is sent to the API so an unknown one is an honest 404
+        // rather than a silently empty list.
+        const qs   = lockedCat ? `?category=${encodeURIComponent(lockedCat)}` : ''
+        const data = await apiFetch(`/s/${encodeURIComponent(slug)}/public${qs}`)
+        school     = data.school
+        feeTypes   = data.feeTypes || []
+        categories = data.categories || []
+
         document.getElementById('payment-section').style.display = 'block'
         document.getElementById('school-title').textContent = school.name
-        document.getElementById('school-subtitle').textContent = `${school.type.charAt(0).toUpperCase() + school.type.slice(1)} School Fee Payment Portal`
+        document.getElementById('school-subtitle').textContent = data.category
+          ? `${data.category.name} — select the fees you are paying for`
+          : 'Select every fee you are paying for — you can pay for several terms at once'
         initPortalNav(school, 'index')
+        renderCategories()
         renderFees()
       } catch (err) {
+        if (lockedCat) {
+          // A bad category in an otherwise valid link should not read as a
+          // missing school — fall back to the full fee list.
+          lockedCat = null; activeCat = null
+          try {
+            const data = await apiFetch(`/s/${encodeURIComponent(slug)}/public`)
+            school = data.school; feeTypes = data.feeTypes || []; categories = data.categories || []
+            document.getElementById('payment-section').style.display = 'block'
+            document.getElementById('school-title').textContent = school.name
+            initPortalNav(school, 'index')
+            renderCategories(); renderFees()
+            toast('That category no longer exists — showing all fees', 'warning')
+            return
+          } catch { /* falls through to no-school */ }
+        }
         document.getElementById('no-school').style.display = 'block'
       }
     }
 
-    function renderFees() {
-      const grid = document.getElementById('fee-grid')
-      if (!feeTypes.length) {
-        grid.innerHTML = '<p style="color:var(--muted);font-size:13px">No active fee types configured.</p>'
-        return
-      }
-      grid.innerHTML = feeTypes.map((f, i) => `
-        <label class="sp-fee-option${i === 0 ? ' selected' : ''}" onclick="selectFee('${esc(f.id)}', this)">
-          <input type="radio" name="fee" value="${esc(f.id)}" ${i === 0 ? 'checked' : ''} />
-          <div class="sp-fee-name">${esc(f.name)}</div>
-          <div class="sp-fee-amount">${formatNaira(f.amount)}</div>
-          <div class="sp-fee-badge">${esc(f.term || '')} ${esc(f.academic_year || '')} ${f.is_mandatory ? '· Required' : ''}</div>
-        </label>`).join('')
-      if (feeTypes.length) selectFee(feeTypes[0].id, null)
+    function renderCategories() {
+      const bar = document.getElementById('cat-bar')
+      // One category is not a choice worth showing.
+      if (lockedCat || categories.length < 2) { bar.style.display = 'none'; return }
+      bar.style.display = 'flex'
+      const chip = (label, slug) =>
+        `<button class="sp-cat-chip${activeCat === slug ? ' active' : ''}" onclick="setCategory(${slug === null ? 'null' : `'${esc(slug)}'`})">${esc(label)}</button>`
+      bar.innerHTML = chip('All fees', null) + categories.map(c => chip(`${c.name} (${c.count})`, c.slug)).join('')
     }
 
-    function selectFee(id, el) {
-      document.querySelectorAll('.sp-fee-option').forEach(o => o.classList.remove('selected'))
-      if (el) el.classList.add('selected')
-      selectedFee = feeTypes.find(f => f.id === id)
-      document.getElementById('amount-display').textContent = selectedFee ? formatNaira(selectedFee.amount) : '₦ 0.00'
-      document.getElementById('pay-btn-label').textContent = selectedFee && method === 'paystack' ? `Pay ${formatNaira(selectedFee.amount)}` : 'Proceed'
+    function setCategory(slug) {
+      activeCat = slug
+      renderCategories()
+      renderFees()
+    }
+
+    function visibleFees() {
+      return activeCat ? feeTypes.filter(f => f.category_slug === activeCat) : feeTypes
+    }
+
+    // Fees are grouped by year and term so paying for more than one term is a
+    // matter of ticking rows in two groups rather than making two payments.
+    function renderFees() {
+      const wrap = document.getElementById('fee-list')
+      const fees = visibleFees()
+      if (!fees.length) {
+        wrap.innerHTML = '<p style="color:var(--muted);font-size:13px">No fees available here yet.</p>'
+        document.getElementById('total-bar').style.display = 'none'
+        return
+      }
+
+      const groups = []
+      for (const f of fees) {
+        const key = [f.academic_year, f.term].filter(Boolean).join(' · ') || 'Other fees'
+        let g = groups.find(x => x.key === key)
+        if (!g) { g = { key, fees: [] }; groups.push(g) }
+        g.fees.push(f)
+      }
+
+      wrap.innerHTML = groups.map((g, gi) => `
+        <div class="sp-term-group">
+          <div class="sp-term-head">
+            <span class="sp-term-title">${esc(g.key)}</span>
+            <button class="sp-term-all" onclick="selectGroup(${gi})">${g.fees.every(f => selected.has(f.id)) ? 'Clear' : 'Select all'}</button>
+          </div>
+          ${g.fees.map(f => `
+            <label class="sp-fee-row${selected.has(f.id) ? ' selected' : ''}" data-fee="${esc(f.id)}">
+              <input type="checkbox" class="sp-fee-check" ${selected.has(f.id) ? 'checked' : ''}
+                     onchange="toggleFee('${esc(f.id)}', this.checked)" />
+              <span class="sp-fee-main">
+                <span class="sp-fee-title">${esc(f.name)}${f.is_mandatory ? '<span class="sp-fee-req">Required</span>' : ''}</span>
+                ${f.description ? `<span class="sp-fee-sub">${esc(f.description)}</span>` : ''}
+              </span>
+              <span class="sp-fee-price">${formatNaira(f.amount)}</span>
+            </label>`).join('')}
+        </div>`).join('')
+
+      // Keep the group list for "Select all" without re-deriving it.
+      renderFees.groups = groups
+      document.getElementById('total-bar').style.display = 'flex'
+      updateTotal()
+    }
+
+    function selectGroup(groupIndex) {
+      const g = (renderFees.groups || [])[groupIndex]
+      if (!g) return
+      // Toggles: a second tap clears the group, so it is never a one-way action.
+      const allOn = g.fees.every(f => selected.has(f.id))
+      g.fees.forEach(f => { if (Number(f.amount) > 0) allOn ? selected.delete(f.id) : selected.add(f.id) })
+      renderFees()
+    }
+
+    function toggleFee(id, on) {
+      const fee = feeTypes.find(f => f.id === id)
+      if (on && fee && !(Number(fee.amount) > 0)) {
+        toast('That fee has no amount set — please contact the school', 'warning')
+        renderFees()
+        return
+      }
+      on ? selected.add(id) : selected.delete(id)
+      document.querySelector(`.sp-fee-row[data-fee="${CSS.escape(id)}"]`)?.classList.toggle('selected', on)
+      updateTotal()
+      updateGroupLabels()
+    }
+
+    // Each group's action reads "Select all" or "Clear" depending on what is
+    // already ticked, so it never looks like a one-way button.
+    function updateGroupLabels() {
+      const groups = renderFees.groups || []
+      document.querySelectorAll('.sp-term-all').forEach((btn, i) => {
+        const g = groups[i]
+        if (g) btn.textContent = g.fees.every(f => selected.has(f.id)) ? 'Clear' : 'Select all'
+      })
+    }
+
+    function selectedFees() {
+      return feeTypes.filter(f => selected.has(f.id))
+    }
+    function selectedTotal() {
+      return selectedFees().reduce((sum, f) => sum + Number(f.amount || 0), 0)
+    }
+
+    function updateTotal() {
+      const fees  = selectedFees()
+      const total = selectedTotal()
+      document.getElementById('total-value').textContent = formatNaira(total)
+      document.getElementById('total-note').textContent = fees.length
+        ? `${fees.length} fee${fees.length === 1 ? '' : 's'} selected`
+        : 'Nothing selected yet'
+      const btn = document.getElementById('pay-btn')
+      btn.disabled = fees.length === 0
+      document.getElementById('pay-btn-label').textContent =
+        fees.length ? `Continue · ${formatNaira(total)}` : 'Continue'
+    }
+
+    function startPayment() {
+      const fees = selectedFees()
+      if (!fees.length) return
+      document.getElementById('summary-lines').innerHTML = fees.map(f => `
+        <tr>
+          <td>${esc(f.name)}${f.term ? `<br><span style="color:var(--muted);font-size:11px">${esc([f.academic_year, f.term].filter(Boolean).join(' · '))}</span>` : ''}</td>
+          <td>${formatNaira(f.amount)}</td>
+        </tr>`).join('')
+      document.getElementById('amount-display').textContent = formatNaira(selectedTotal())
+      document.getElementById('step-fee').style.display     = 'none'
+      document.getElementById('step-details').style.display = 'block'
+      setMethod(method)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    function backToFees() {
+      document.getElementById('step-details').style.display = 'none'
+      document.getElementById('step-fee').style.display     = 'block'
+      document.getElementById('form-error').style.display   = 'none'
     }
 
     function setMethod(m) {
       method = m
       document.getElementById('tab-paystack').classList.toggle('active', m === 'paystack')
       document.getElementById('tab-bank').classList.toggle('active', m === 'bank')
-      if (selectedFee) document.getElementById('pay-btn-label').textContent = m === 'paystack' ? `Pay ${formatNaira(selectedFee.amount)}` : 'Get Bank Details'
+      document.getElementById('submit-btn-label').textContent =
+        m === 'paystack' ? `Pay ${formatNaira(selectedTotal())}` : 'Get Bank Details'
     }
 
     async function initiate() {
       const errEl = document.getElementById('form-error')
-      const btn   = document.getElementById('pay-btn')
+      const btn   = document.getElementById('submit-btn')
       errEl.style.display = 'none'
 
       const student_id    = document.getElementById('student-id').value.trim()
@@ -180,62 +338,63 @@
       const student_email = document.getElementById('student-email').value.trim()
       const student_class = document.getElementById('student-class').value.trim()
 
-      if (!selectedFee)              { errEl.textContent = 'Please select a fee type'; errEl.style.display = 'block'; return }
-      if (Number(selectedFee.amount) <= 0) { errEl.textContent = 'This fee has no amount set. Please contact the school.'; errEl.style.display = 'block'; return }
-      if (!student_id)               { errEl.textContent = 'Student ID is required'; errEl.style.display = 'block'; return }
-      if (!student_name)             { errEl.textContent = 'Full name is required'; errEl.style.display = 'block'; return }
-      if (!student_email)            { errEl.textContent = 'Email address is required'; errEl.style.display = 'block'; return }
+      const fail = (msg) => { errEl.textContent = msg; errEl.style.display = 'block' }
+      if (!selected.size)  return fail('Please select at least one fee')
+      if (!student_id)     return fail('Student ID is required')
+      if (!student_name)   return fail('Full name is required')
+      if (!student_email)  return fail('Email address is required')
 
       btnLoading(btn, true)
       try {
-        const data = await apiFetch(`/s/${school.slug}/payments/initiate`, {
+        const data = await apiFetch(`/s/${encodeURIComponent(school.slug)}/payments/initiate`, {
           method: 'POST',
-          body: JSON.stringify({ payment_type_id: selectedFee.id, student_id, student_name, student_email, student_class, method }),
+          body: JSON.stringify({
+            payment_type_ids: [...selected],
+            student_id, student_name, student_email, student_class, method,
+          }),
         })
-
-        if (method === 'bank') {
-          showBankStep(data, student_email)
-        } else {
-          openPaystack(data, student_email)
-        }
+        if (method === 'bank') showBankStep(data, student_email)
+        else                   openPaystack(data, student_email)
       } catch (err) {
-        errEl.textContent = err.message
-        errEl.style.display = 'block'
+        fail(err.message)
+      } finally {
+        // Must restore on the success path too, or coming back to this step
+        // finds a dead button.
+        btnLoading(btn, false, `<span id="submit-btn-label">Pay Now</span>`)
+        setMethod(method)
       }
-      btnLoading(btn, false, `<span id="pay-btn-label">Pay Now</span>`)
     }
 
     function showBankStep(data, email) {
-      document.getElementById('step-fee').style.display  = 'none'
-      document.getElementById('step-bank').style.display = 'block'
       const bd = data.bankDetails
+      document.getElementById('step-details').style.display = 'none'
+      document.getElementById('step-bank').style.display    = 'block'
       document.getElementById('bank-name').textContent         = bd.bank_name || '—'
       document.getElementById('bank-account').textContent      = bd.account_number || '—'
       document.getElementById('bank-account-name').textContent = bd.account_name || '—'
       document.getElementById('bank-amount').textContent       = formatNaira(bd.amount)
       document.getElementById('bank-reference').textContent    = bd.reference
-      sessionStorage.setItem('sp_bank_ref',  bd.reference)
+      document.getElementById('bank-lines').innerHTML = (data.items || []).map(it => `
+        <tr><td>${esc(it.name)}</td><td>${formatNaira(it.amount)}</td></tr>`).join('')
+      sessionStorage.setItem('sp_bank_ref',    bd.reference)
       sessionStorage.setItem('sp_payer_email', email)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
     function openPaystack(data, email) {
       const handler = PaystackPop.setup({
-        key:       school.paystack_public_key,
+        key:      school.paystack_public_key,
         email,
-        amount:    Math.round(selectedFee.amount * 100),
-        ref:       data.payment.reference,
-        currency:  'NGN',
-        callback: async (response) => {
-          try {
-            const verified = await apiFetch(`/s/${school.slug}/payments/verify?ref=${response.reference}`)
-            document.getElementById('step-fee').style.display     = 'none'
-            document.getElementById('step-success').style.display = 'block'
-            document.getElementById('success-email').textContent  = email
-            document.getElementById('success-receipt').textContent = verified.receipt_number || 'Processing...'
-            if (verified.receipt_number) {
-              document.getElementById('receipt-link').href = `/portal/receipt.html?school=${school.slug}&receipt=${verified.receipt_number}`
-            }
-          } catch { toast('Payment recorded. Check your email for receipt.', 'success') }
+        // Charged in kobo, from the server's total — never a figure this page
+        // added up on its own.
+        amount:   Math.round(Number(data.payment.amount) * 100),
+        ref:      data.payment.reference,
+        currency: 'NGN',
+        callback: (response) => {
+          // Hand off to the verification page, which polls until the Paystack
+          // webhook lands. Checking once here showed "Processing…" beside a
+          // receipt link that was never filled in.
+          window.location.href = `/portal/verify.html?school=${encodeURIComponent(school.slug)}&ref=${encodeURIComponent(response.reference)}`
         },
         onClose: () => toast('Payment cancelled', 'warning'),
       })
@@ -243,14 +402,17 @@
     }
 
     function goToUpload() {
-      window.location.href = `/portal/upload.html?school=${school.slug}`
+      window.location.href = `/portal/upload.html?school=${encodeURIComponent(school.slug)}`
     }
 
     function resetForm() {
-      document.getElementById('step-fee').style.display     = 'block'
+      selected.clear()
       document.getElementById('step-bank').style.display    = 'none'
-      document.getElementById('step-success').style.display = 'none'
+      document.getElementById('step-details').style.display = 'none'
+      document.getElementById('step-fee').style.display     = 'block'
       document.getElementById('form-error').style.display   = 'none'
+      renderFees()
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
     init()

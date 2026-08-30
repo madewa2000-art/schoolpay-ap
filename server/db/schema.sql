@@ -143,11 +143,43 @@ CREATE TABLE IF NOT EXISTS complaint_replies (
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ─── SEED: default super admin (change password immediately after setup) ─────
--- password: superadmin123  (bcrypt hash below)
+-- ─── SEED: default super admin (change password after setup) ─────────────────
+-- email: admin@schoolpay.local   password: P@ssw0rd  (bcrypt hash below)
 INSERT INTO super_admins (name, email, password_hash)
 VALUES (
   'Platform Admin',
   'admin@schoolpay.local',
-  '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'  -- "password"
+  '$2b$10$O8jPGM/qA4yO5RC9y3IEVu3fLF3ewHXhX4y3u6LH2G/6o0RJ8gM4W'  -- "P@ssw0rd"
 ) ON CONFLICT (email) DO NOTHING;
+
+-- ─── FEE CATEGORIES + MULTI-FEE PAYMENTS ─────────────────────────────────────
+-- Added after launch, so every statement is idempotent and safe to re-run on a
+-- database that already holds live payments.
+
+-- Categories are a plain label on the fee type rather than a table of their
+-- own: a school types "Levies" on three fees and they group. category_slug is
+-- the URL form, kept in the row so the per-category payment link can be
+-- resolved with an index rather than by slugifying every row on every request.
+ALTER TABLE payment_types ADD COLUMN IF NOT EXISTS category      VARCHAR(80);
+ALTER TABLE payment_types ADD COLUMN IF NOT EXISTS category_slug VARCHAR(80);
+CREATE INDEX IF NOT EXISTS idx_payment_types_category
+  ON payment_types(school_id, category_slug);
+
+-- One row per fee inside a payment. A single-fee payment still sets
+-- payments.payment_type_id, so every existing query keeps working; a multi-fee
+-- payment leaves it null and lives entirely in this table.
+--
+-- Name, term and year are snapshotted at payment time on purpose: a receipt has
+-- to keep saying what was actually bought even after the school renames or
+-- reprices the fee.
+CREATE TABLE IF NOT EXISTS payment_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_id      UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+  payment_type_id UUID REFERENCES payment_types(id),
+  name            VARCHAR(255) NOT NULL,
+  term            VARCHAR(100),
+  academic_year   VARCHAR(20),
+  amount          NUMERIC(12,2) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items(payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_items_type    ON payment_items(payment_type_id);

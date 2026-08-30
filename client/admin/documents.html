@@ -70,6 +70,10 @@
     if (user) { initAdminPage({ activePage: 'documents', titleText: 'Bank Documents' }); init() }
 
     let reviewTarget = null
+    // Same reason as the fees and complaints tables: the row object used to be
+    // JSON-stringified into the onclick attribute, which any quote in the data
+    // would break.
+    let docList = []
 
     async function init() {
       const school = getSchool()
@@ -78,6 +82,7 @@
       tbody.innerHTML = `<tr class="sp-loading-row"><td colspan="9"><span class="sp-spinner dark"></span></td></tr>`
       try {
         const docs = await apiFetch(`/s/${school.slug}/admin/documents?status=${status}`)
+        docList = docs
         if (!docs.length) {
           tbody.innerHTML = `<tr><td colspan="9"><div class="sp-empty"><p>No ${status} documents</p></div></td></tr>`
           return
@@ -96,19 +101,21 @@
             <td data-label="Status">${badgeHTML(d.review_status)}</td>
             <td data-label="">
               ${d.review_status === 'pending'
-                ? `<button class="btn btn-primary btn-sm" onclick='openReview(${JSON.stringify(d)})'>Review</button>`
+                ? `<button class="btn btn-primary btn-sm" onclick="openReview('${esc(d.id)}')">Review</button>`
                 : `<small style="color:var(--muted)">${esc(d.review_note || '')}</small>`}
             </td>
           </tr>`).join('')
       } catch (err) { toast(err.message, 'error') }
     }
 
-    function openReview(doc) {
+    function openReview(docId) {
+      const doc = docList.find(x => String(x.id) === String(docId))
+      if (!doc) { toast('Document not found — reloading', 'error'); init(); return }
       reviewTarget = doc
       const isMeta = doc.mime_type && doc.mime_type.startsWith('image/')
       document.getElementById('review-doc-preview').innerHTML = isMeta
-        ? `<img src="${doc.file_path}" style="max-height:200px;border-radius:6px;border:1px solid var(--rule)" />`
-        : `<a href="${doc.file_path}" target="_blank" class="btn btn-outline">Open Document</a>`
+        ? `<img src="${esc(doc.file_path)}" style="max-height:200px;border-radius:6px;border:1px solid var(--rule)" />`
+        : `<a href="${esc(doc.file_path)}" target="_blank" class="btn btn-outline">Open Document</a>`
       document.getElementById('review-student').textContent = `${doc.student_name} (${doc.student_id})`
       document.getElementById('review-amount').textContent  = formatNaira(doc.amount)
       document.getElementById('review-note').value = ''
@@ -135,7 +142,8 @@
       } catch (err) {
         errEl.textContent = err.message
         errEl.style.display = 'block'
-        btnLoading(appBtn, false, 'Approve & Confirm')
+      } finally {
+        btnLoading(appBtn, false, 'Approve &amp; Confirm')
         btnLoading(rejBtn, false, 'Reject')
       }
     }

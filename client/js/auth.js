@@ -29,10 +29,25 @@ function requireSuperAuth() {
   return user
 }
 
-// Portal: gets school slug from ?school= URL param, caches it in sessionStorage
+// Portal: resolves the school from either address form —
+//   /portal/index.html?school=st-marys        (the original)
+//   /pay/st-marys/levies                      (shareable payment link)
+// falling back to the last school seen in this tab.
 function getPortalSlug() {
-  const params = new URLSearchParams(window.location.search)
-  const slug   = params.get('school') || sessionStorage.getItem('sp_portal_school')
+  const fromPath = window.location.pathname.match(/^\/pay\/([^/]+)/)
+  const params   = new URLSearchParams(window.location.search)
+  const slug     = (fromPath && decodeURIComponent(fromPath[1]))
+                || params.get('school')
+                || sessionStorage.getItem('sp_portal_school')
   if (slug) sessionStorage.setItem('sp_portal_school', slug)
   return slug
+}
+
+// The category half of a payment link, if the payer arrived through one.
+// Deliberately not cached: leaving a category link should not narrow the fee
+// list on a later visit to the full portal.
+function getPortalCategory() {
+  const fromPath = window.location.pathname.match(/^\/pay\/[^/]+\/([^/]+)/)
+  if (fromPath) return decodeURIComponent(fromPath[1])
+  return new URLSearchParams(window.location.search).get('category') || null
 }
