@@ -2,6 +2,7 @@ import { Router }  from 'express'
 import bcrypt       from 'bcryptjs'
 import { pool }     from '../db/index.js'
 import { verifyToken, requireRole } from '../middleware/auth.js'
+import { categorySlug } from '../utils/category.js'
 
 const router = Router()
 const superOnly = [verifyToken, requireRole('super_admin')]
@@ -68,6 +69,13 @@ router.post('/', ...superOnly, async (req, res, next) => {
     if (!name || !slug || !type || !admin_name || !admin_email || !admin_password)
       return res.status(400).json({ error: 'name, slug, type and admin details are required' })
 
+    // The slug is the school's address — /pay/<slug> and every portal link are
+    // built from it — so it is normalised here rather than stored as typed.
+    // "Leadway School" became a link containing %20; it is now "leadway-school".
+    const cleanSlug = categorySlug(slug)
+    if (!cleanSlug)
+      return res.status(400).json({ error: 'slug must contain at least one letter or number' })
+
     if (!['primary','secondary','university'].includes(type))
       return res.status(400).json({ error: 'type must be primary, secondary, or university' })
 
@@ -82,7 +90,7 @@ router.post('/', ...superOnly, async (req, res, next) => {
             from_email, smtp_host, smtp_port, smtp_user, smtp_pass)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          RETURNING id, name, slug, type`,
-        [name, slug, type, logo_url, bank_name, bank_account, bank_account_name,
+        [name, cleanSlug, type, logo_url, bank_name, bank_account, bank_account_name,
          paystack_public_key, paystack_secret_key,
          from_email, smtp_host, smtp_port || 587, smtp_user, smtp_pass]
       )
