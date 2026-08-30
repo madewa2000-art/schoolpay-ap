@@ -1,6 +1,8 @@
 import axios from 'axios'
 
-const BASE = 'https://api.paystack.co'
+// Overridable so the retry behaviour can be exercised against a local stub in
+// development. Never set in production.
+const BASE = process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co'
 
 export async function initializeTransaction({ secretKey, email, amountKobo, reference, callbackUrl, metadata }) {
   const res = await axios.post(

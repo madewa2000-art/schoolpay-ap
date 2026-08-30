@@ -126,10 +126,9 @@ router.post('/payments/initiate', attachSchool, async (req, res, next) => {
     // bank transfer and came back later could never get past it. Now a pending
     // payment covering exactly the same set of fees is resumed.
     //
-    // The reference is deliberately NOT regenerated: Paystack matches its
-    // webhook on the reference, so rotating it on an already-attempted payment
-    // would orphan a real one. Amount and method are refreshed, since the payer
-    // may have switched method or the school may have repriced a fee.
+    // Amount and method are refreshed on resume, since the payer may have
+    // switched method or the school may have repriced a fee. Whether the
+    // reference can be reused is decided below, by asking Paystack.
     const { rows: pendings } = await pool.query(
       `SELECT p.*, COALESCE(
                 array_agg(pi.payment_type_id::text) FILTER (WHERE pi.payment_type_id IS NOT NULL),
@@ -151,10 +150,66 @@ router.post('/payments/initiate', attachSchool, async (req, res, next) => {
       return ids.size === feeIdSet.size && [...feeIdSet].every((id) => ids.has(id))
     })
 
+    // Can the old reference actually be reused?
+    //
+    // Paystack refuses to start a transaction on a reference it has already
+    // seen — the payer gets "Duplicate Transaction Reference" from the popup
+    // itself, which no amount of retrying fixes. So before resuming a Paystack
+    // payment, ask Paystack what became of the old reference:
+    //
+    //   success            already paid — confirm it, do not charge again
+    //   abandoned/failed   the reference is spent; retire this record and mint
+    //   /reversed          a fresh one for the retry
+    //   ongoing/pending    the charge may still land; keep the same reference
+    //                      rather than risk charging twice
+    //   not found          Paystack never saw it; reuse is safe
+    //
+    // The retired record keeps its own reference rather than having it
+    // rewritten, so if that old checkout somehow does settle later, the webhook
+    // still finds the row it belongs to and nobody's money goes missing.
+    let resume = resumable
+    if (resume && method === 'paystack' && req.school.paystack_secret_key) {
+      let tx = null
+      try {
+        tx = await verifyTransaction({ secretKey: req.school.paystack_secret_key, reference: resume.reference })
+      } catch {
+        tx = null   // unknown reference — safe to reuse
+      }
+
+      if (tx?.status === 'success') {
+        const out = await confirmPaystackPayment({
+          payment: resume, school: req.school, paystackId: tx.id, amountKobo: tx.amount,
+        })
+        if (out.confirmed) {
+          const { rows } = await pool.query(
+            `SELECT p.*, pt.name AS fee_type_name, r.receipt_number
+               FROM payments p
+               LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
+               LEFT JOIN receipts r ON r.payment_id = p.id
+              WHERE p.id = $1`, [resume.id]
+          )
+          client.release()
+          return res.json({ payment: rows[0], alreadyPaid: true })
+        }
+      }
+
+      if (tx && ['abandoned', 'failed', 'reversed'].includes(tx.status)) {
+        await pool.query("UPDATE payments SET status = 'failed' WHERE id = $1 AND status = 'pending'", [resume.id])
+        resume = null
+      } else if (tx && ['ongoing', 'pending', 'processing', 'queued'].includes(tx.status)) {
+        // A charge is still in flight on this reference. Opening the popup again
+        // would fail on the duplicate, and minting a new reference could charge
+        // the payer twice — so neither. Hand the payer to the verification page,
+        // which polls until Paystack settles it either way.
+        client.release()
+        return res.json({ payment: resume, inProgress: true })
+      }
+    }
+
     let payment
     await client.query('BEGIN')
     try {
-      if (resumable) {
+      if (resume) {
         const { rows } = await client.query(
           `UPDATE payments
               SET method = $1, amount = $2, student_name = $3,
@@ -162,7 +217,7 @@ router.post('/payments/initiate', attachSchool, async (req, res, next) => {
             WHERE id = $7
           RETURNING *`,
           [method, total, student_name, student_email, student_class || null,
-           single ? single.id : null, resumable.id]
+           single ? single.id : null, resume.id]
         )
         payment = rows[0]
         await client.query('DELETE FROM payment_items WHERE payment_id = $1', [payment.id])
@@ -227,7 +282,7 @@ router.post('/payments/initiate', attachSchool, async (req, res, next) => {
         })
       } catch (err) {
         console.error('PAYSTACK_INIT_FAILED', reference, err.response?.data?.message || err.message)
-        if (!resumable) throw err
+        if (!resume) throw err
       }
       return res.json({ payment, items, paystack: paystackData })
     }

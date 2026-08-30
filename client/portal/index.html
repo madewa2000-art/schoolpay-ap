@@ -353,6 +353,13 @@
             student_id, student_name, student_email, student_class, method,
           }),
         })
+        if (data.alreadyPaid || data.inProgress) {
+          // Either it is already paid, or a charge is still in flight on this
+          // reference. Opening the popup would fail on Paystack's duplicate
+          // check; the verification page polls until it settles.
+          window.location.href = `/portal/verify.html?school=${encodeURIComponent(school.slug)}&ref=${encodeURIComponent(data.payment.reference)}`
+          return
+        }
         if (method === 'bank') showBankStep(data, student_email)
         else                   openPaystack(data, student_email)
       } catch (err) {
