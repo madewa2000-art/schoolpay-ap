@@ -1,15 +1,9 @@
 import { Router }  from 'express'
 import crypto      from 'crypto'
 import { pool }    from '../db/index.js'
-import { generateReceiptNumber } from '../utils/reference.js'
-import { sendReceiptEmail }      from '../utils/mailer.js'
+import { confirmPaystackPayment, toKobo } from '../services/confirm.js'
 
 const router = Router()
-
-// Converts a DB NUMERIC naira amount to a kobo integer without float precision loss.
-function toKobo(nairaAmount) {
-  return parseInt(Number(nairaAmount).toFixed(2).replace('.', ''), 10)
-}
 
 // POST /api/webhooks/paystack
 // req.body is a raw Buffer because express.raw() is mounted on this path in index.js
@@ -71,35 +65,16 @@ router.post('/paystack', async (req, res) => {
   // 5. All validation passed — acknowledge to Paystack immediately
   res.sendStatus(200)
 
-  // 6. Confirm payment and generate receipt atomically
-  const client = await pool.connect()
+  // 6. Confirm and issue the receipt. Shared with the verify endpoint's
+  //    fallback, so a payment confirmed by a page refresh and one confirmed by
+  //    this webhook go through identical code — and whichever lands second is
+  //    a no-op rather than a second receipt.
   try {
-    await client.query('BEGIN')
-
-    await client.query(
-      `UPDATE payments
-       SET status = 'confirmed', paystack_ref = $1, confirmed_at = NOW()
-       WHERE id = $2 AND status != 'confirmed'`,
-      [event.data.id, row.id]
-    )
-
-    const receiptNumber = generateReceiptNumber({ slug: school.slug })
-    const rcptRes = await client.query(
-      `INSERT INTO receipts (school_id, payment_id, receipt_number)
-       VALUES ($1,$2,$3) ON CONFLICT (payment_id) DO NOTHING RETURNING *`,
-      [row.school_id, row.id, receiptNumber]
-    )
-
-    await client.query('COMMIT')
-
-    if (rcptRes.rows.length) {
-      sendReceiptEmail({ school, payment: row, receipt: rcptRes.rows[0] }).catch(console.error)
-    }
+    await confirmPaystackPayment({
+      payment: row, school, paystackId: event.data.id, amountKobo: amount,
+    })
   } catch (err) {
-    await client.query('ROLLBACK')
     console.error('Webhook processing failed:', { reference, error: err.message })
-  } finally {
-    client.release()
   }
 })
 

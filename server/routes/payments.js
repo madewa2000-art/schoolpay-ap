@@ -4,7 +4,8 @@ import { pool }         from '../db/index.js'
 import { attachSchool } from '../middleware/school.js'
 import { verifyToken, requireRole } from '../middleware/auth.js'
 import { generateReference, generateReceiptNumber } from '../utils/reference.js'
-import { initializeTransaction, refundTransaction } from '../utils/paystack.js'
+import { initializeTransaction, refundTransaction, verifyTransaction } from '../utils/paystack.js'
+import { confirmPaystackPayment } from '../services/confirm.js'
 import { sendReceiptEmail }         from '../utils/mailer.js'
 import { normalizeCategory, DEFAULT_CATEGORY } from '../utils/category.js'
 
@@ -266,13 +267,50 @@ router.get('/payments/verify', attachSchool, async (req, res, next) => {
       [ref, req.school.id]
     )
     if (!payRes.rows.length) return res.status(404).json({ error: 'Payment not found' })
+    let payment = payRes.rows[0]
+
+    // Ask Paystack directly when the record is still pending.
+    //
+    // Confirmation normally arrives by webhook, but a webhook can be
+    // unconfigured, blocked, or simply slow, and the payer is sitting on this
+    // page waiting. So when the payment is still pending we check with Paystack
+    // ourselves and confirm from the answer. Same code path the webhook uses,
+    // so the two cannot diverge, and it is idempotent — whichever arrives first
+    // wins and the other is a no-op.
+    //
+    // This is a read of Paystack's own record using the school's secret key, so
+    // it cannot be used to confirm a payment that was never made.
+    if (payment.status === 'pending' && payment.method === 'paystack' && req.school.paystack_secret_key) {
+      try {
+        const tx = await verifyTransaction({ secretKey: req.school.paystack_secret_key, reference: ref })
+        if (tx?.status === 'success') {
+          const out = await confirmPaystackPayment({
+            payment, school: req.school, paystackId: tx.id, amountKobo: tx.amount,
+          })
+          if (out.confirmed) {
+            const { rows } = await pool.query(
+              `SELECT p.*, pt.name AS fee_type_name, r.receipt_number
+                 FROM payments p
+                 LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
+                 LEFT JOIN receipts r ON r.payment_id = p.id
+                WHERE p.id = $1`, [payment.id]
+            )
+            payment = rows[0]
+          }
+        }
+      } catch (err) {
+        // A Paystack outage must not break the page: fall through and report
+        // the payment as it stands, which is what the webhook will fix.
+        console.error('VERIFY_FALLBACK_FAILED', ref, err.response?.data?.message || err.message)
+      }
+    }
 
     const { rows: items } = await pool.query(
       `SELECT name, term, academic_year, amount FROM payment_items
        WHERE payment_id = $1 ORDER BY name`,
-      [payRes.rows[0].id]
+      [payment.id]
     )
-    res.json({ ...payRes.rows[0], items })
+    res.json({ ...payment, items })
   } catch (err) { next(err) }
 })
 
