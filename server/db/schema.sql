@@ -143,14 +143,9 @@ CREATE TABLE IF NOT EXISTS complaint_replies (
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ─── SEED: default super admin (change password after setup) ─────────────────
--- email: admin@schoolpay.local   password: P@ssw0rd  (bcrypt hash below)
-INSERT INTO super_admins (name, email, password_hash)
-VALUES (
-  'Platform Admin',
-  'admin@schoolpay.local',
-  '$2b$10$O8jPGM/qA4yO5RC9y3IEVu3fLF3ewHXhX4y3u6LH2G/6o0RJ8gM4W'  -- "P@ssw0rd"
-) ON CONFLICT (email) DO NOTHING;
+-- The first platform admin is created at startup from SEED_ADMIN_EMAIL and
+-- SEED_ADMIN_PASSWORD (see ensureSuperAdmin in server/index.js), so no
+-- password ever lives in this file.
 
 -- ─── FEE CATEGORIES + MULTI-FEE PAYMENTS ─────────────────────────────────────
 -- Added after launch, so every statement is idempotent and safe to re-run on a

@@ -158,10 +158,36 @@ async function runMigrations() {
   console.log('Database schema ready')
 }
 
+// Creates the first platform admin if there isn't one yet. Credentials come
+// from the environment so no default password ships with the code. Locally,
+// with nothing set, a random one is generated and printed once.
+async function ensureSuperAdmin() {
+  const { pool } = await import('./db/index.js')
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM super_admins')
+  if (rows[0].n > 0) return
+  let email = process.env.SEED_ADMIN_EMAIL
+  let password = process.env.SEED_ADMIN_PASSWORD
+  if (!email || !password) {
+    if (isProd) {
+      console.warn('No platform admin exists. Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD to create one.')
+      return
+    }
+    const { randomBytes } = await import('crypto')
+    email = email || 'admin@schoolpay.local'
+    password = password || randomBytes(9).toString('base64url')
+    console.log(`Dev platform admin: ${email} / ${password}`)
+  }
+  const bcrypt = await import('bcryptjs')
+  const hash = await bcrypt.hash(password, 12)
+  await pool.query('INSERT INTO super_admins (name, email, password_hash) VALUES ($1, $2, $3)', ['Platform Admin', email.toLowerCase(), hash])
+  console.log(`Platform admin created: ${email}`)
+}
+
 app.listen(PORT, () => {
   ;(async () => {
     try {
       await runMigrations()
+      await ensureSuperAdmin()
       console.log(`SchoolPay server running on port ${PORT}`)
     } catch (err) {
       console.error('FATAL: Startup failed:', err.message)

@@ -38,15 +38,6 @@ async function memPool() {
     try { db.public.none(stmt) } catch { /* skip */ }
   }
 
-  // Seed default super admin (password: "P@ssw0rd")
-  const bcrypt = await import('bcryptjs')
-  const hash   = await bcrypt.hash('P@ssw0rd', 10)
-  const saId   = newUUID()
-  try {
-    db.public.none(
-      `INSERT INTO super_admins (id, name, email, password_hash) VALUES ('${saId}', 'Platform Admin', 'admin@schoolpay.local', '${hash}')`
-    )
-  } catch { /* already exists */ }
 
   const adapter = db.adapters.createPg()
   const pool    = new adapter.Pool()
